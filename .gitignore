@@ -1,0 +1,26 @@
+# Secrets and local configuration
+.env
+.env.local
+*.pem
+*.key
+
+# Build artefacts
+/bin/
+/dist/
+coverage.out
+coverage.html
+
+# Local data
+/data/
+/backups/
+*.db
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Go
+vendor/

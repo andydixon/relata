@@ -1,0 +1,114 @@
+{{define "content"}}
+<h1>API tokens</h1>
+<p class="lede">
+  Non-interactive credentials for <code>/api/v1</code>. They authenticate programs, not people.
+</p>
+
+{{if .NewSecret}}
+<section class="panel panel-highlight">
+  <h2>Your new token{{if .NewName}}: {{.NewName}}{{end}}</h2>
+  <p class="callout">
+    <strong>This is the only time it will be shown.</strong> Relata stores only a hash of it and
+    cannot show it again. Copy it now.
+  </p>
+  <pre class="secret"><code id="new-token">{{.NewSecret}}</code></pre>
+  <p>
+    <button type="button" class="btn" data-copy="new-token">Copy to clipboard</button>
+  </p>
+  <p class="muted">
+    The value exists only in this response and is not included in the page URL. Copy it before
+    navigating away; refreshing the page will not recover the same secret.
+  </p>
+</section>
+{{end}}
+
+<section class="panel">
+  <h2>Create a token</h2>
+  <form method="post" action="/settings/tokens" class="stack">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <div class="field">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" maxlength="80" required
+             placeholder="e.g. nightly ingestion script">
+      <p class="hint">So you can tell your tokens apart later.</p>
+    </div>
+
+    <fieldset class="field">
+      <legend>Scopes</legend>
+      {{range .Scopes}}
+      <label class="check">
+        <input type="checkbox" name="scopes" value="{{.Scope}}" {{if not .Available}}disabled{{end}}>
+        <span><strong>{{.Label}}</strong> — {{.Description}}
+        {{if not .Available}}<em class="muted">(not available to your role)</em>{{end}}</span>
+      </label>
+      {{end}}
+      <p class="hint">Grant only what the program needs. Scopes narrow permission; they never widen it.</p>
+    </fieldset>
+
+    <div class="field">
+      <label for="ttl_days">Expires after (days)</label>
+      <input type="number" id="ttl_days" name="ttl_days" min="1" max="{{.MaxTTL}}" value="{{.DefaultTTL}}">
+      <p class="hint">Maximum {{.MaxTTL}} days. A token stops working at its expiry with no further action.</p>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Create token</button>
+      <a class="btn btn-quiet" href="/settings">Back to settings</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Your tokens</h2>
+  {{if .Tokens}}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Name</th><th>Prefix</th><th>Scopes</th>
+        <th>Created</th><th>Expires</th><th>Last used</th><th>Status</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Tokens}}
+      <tr {{if or .Revoked .Expired}}class="row-inactive"{{end}}>
+        <td>{{.Token.Name}}</td>
+        <td><code>{{.Token.Prefix}}…</code></td>
+        <td>{{.Scopes}}</td>
+        <td>{{.Token.CreatedAt.Format "2 Jan 2006"}}</td>
+        <td>{{if .Token.ExpiresAt.IsZero}}never{{else}}{{.Token.ExpiresAt.Format "2 Jan 2006"}}{{end}}</td>
+        <td>{{if .Token.LastUsedAt}}{{.Token.LastUsedAt.Format "2 Jan 2006 15:04"}}{{else}}never{{end}}</td>
+        <td><span class="status status-{{if .Revoked}}rejected{{else if .Expired}}muted{{else}}confirmed{{end}}">{{.Status}}</span></td>
+        <td>
+          {{if not .Revoked}}
+          <form method="post" action="/settings/tokens/{{.Token.ID}}/revoke"
+                data-confirm="Revoke this token? Any program using it will stop working immediately.">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn-quiet btn-danger">Revoke</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted">
+    Revoked and expired tokens stay listed. Hiding them would make this page a worse record of
+    what existed than the audit log.
+  </p>
+  {{else}}
+  <p class="empty">You have no API tokens. Create one above to use the API.</p>
+  {{end}}
+</section>
+
+<section class="panel panel-quiet">
+  <h2>Using a token</h2>
+  <pre><code>curl -H "Authorization: Bearer $RELATA_TOKEN" \
+  '{{"https://your-host/api/v1/search?q=delivery"}}'</code></pre>
+  <p class="muted">
+    Send it in the <code>Authorization</code> header only — never in a query parameter, where it
+    would end up in access logs, browser history and referrer headers.
+    <a href="/api">Full API description</a>.
+  </p>
+</section>
+{{end}}

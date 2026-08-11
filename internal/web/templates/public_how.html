@@ -1,0 +1,142 @@
+{{define "content"}}
+<h1>How Relata works</h1>
+<p class="lede">
+  Ingest, derive, connect, retrieve — with the reasoning kept and shown at every step.
+</p>
+
+<section class="panel">
+  <h2>The pipeline</h2>
+  <ol class="pipeline">
+    <li><strong>Ingest.</strong> The original bytes are stored verbatim and never rewritten.
+      An exact duplicate is detected and reported rather than silently stored twice.</li>
+    <li><strong>Parse.</strong> Text, Markdown, JSON, PDF and DOCX become extracted text plus a
+      structure map. The parser version is recorded on the item.</li>
+    <li><strong>Chunk.</strong> Structure-aware splitting, so a chunk is a passage rather than
+      an arbitrary window. Chunk IDs are deterministic and double as vector IDs.</li>
+    <li><strong>Embed.</strong> Each chunk is embedded locally; the model that produced each
+      vector is recorded, so a model change is visible rather than silent.</li>
+    <li><strong>Extract.</strong> Entities and claims, deterministically where the text allows
+      and with model assistance where it does not — each labelled with which produced it.</li>
+    <li><strong>Discover.</strong> A bounded candidate set is scored against explicit signals.
+      There is no all-pairs comparison and no unexplained number anywhere in it.</li>
+  </ol>
+  <p class="muted">
+    Every stage is a queued job with a lease rather than a lock, so a worker that dies has its
+    work returned to the queue rather than holding it forever.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>How a relationship gets its score</h2>
+  <p>
+    The score is the weighted sum of the signals that fired, capped at 1.00, under a versioned
+    scoring model. Each signal is stored with its own value, strength and weight, so the total
+    is arithmetic you can check.
+  </p>
+  <table class="weights">
+    <thead><tr><th>Signal</th><th>Weight</th><th>What it means</th></tr></thead>
+    <tbody>
+      {{range .Weights}}
+      <tr>
+        <td><code>{{.Signal}}</code></td>
+        <td class="num">{{printf "%.2f" .Weight}}</td>
+        <td>{{.Means}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <h3>Three deliberate judgements</h3>
+  <ul>
+    <li><strong>Similarity alone cannot look like evidence.</strong> Unrelated documents from
+      one corpus routinely sit at 0.5–0.7 cosine, so raw similarity carries almost no
+      information at the low end. It is rebased against a floor of 0.55 before it counts.</li>
+    <li><strong>A model cannot manufacture a relationship.</strong> Its weight is below the
+      storage threshold, so a maximally confident classification still cannot create a link.
+      It can shape a relationship other evidence already supports.</li>
+    <li><strong>Human decisions dominate.</strong> Confirmation saturates the score; rejection
+      drives it to zero. Neither deletes anything — the original proposal, its provenance and
+      its signals are all retained.</li>
+  </ul>
+
+  <h3>Diminishing returns</h3>
+  <p>
+    Repeated signals of one type contribute 1.0, then 0.5, then 0.25, then nothing. Breadth of
+    evidence beats repetition: a document mentioning one company twelve times should not
+    outrank one that relates on several independent grounds.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Why each search result was returned</h2>
+  <p>
+    A query runs through several independent paths — keyword, vector, entity, title, and
+    expansion through relationships — each producing its own ordering. They are fused by
+    <em>reciprocal rank</em> rather than by adding scores, because a keyword score and a cosine
+    distance are not on comparable scales and whichever had the larger range would dominate.
+  </p>
+  <p>Every result carries its reasons in plain words:</p>
+  <ul class="why">
+    <li>A section of this item is close in meaning to your query (similarity 0.89).</li>
+    <li>The item's text contains words from your query.</li>
+    <li>This item refers to Example Ltd (organisation), which your query names.</li>
+    <li>Not a direct match. Reached because this item <strong>updates</strong> a matching item —
+      strength 0.68 (suggested by analysis, not yet reviewed).</li>
+  </ul>
+  <p class="muted">
+    Relevance is normalised against the best result in the same response, so it is comparable
+    within one result set and not across queries. The interface says so rather than leaving you
+    to assume otherwise.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Answers from stored knowledge</h2>
+  <p>These hold regardless of what the model returns:</p>
+  <ol>
+    <li>The model sees only retrieved passages, inside delimited untrusted blocks.</li>
+    <li>Passages are labelled <code>S1</code>, <code>S2</code>… — item IDs are never shown to
+      the model, so a fabricated citation cannot resolve to a real record.</li>
+    <li>An answer claiming sufficiency while citing nothing is downgraded to insufficient.</li>
+    <li>Contradictions Relata recorded between the retrieved items are surfaced
+      <strong>independently of the model's own account</strong>, so a model that quietly picked
+      a side cannot hide the disagreement.</li>
+    <li>Inferred relationships that influenced retrieval are listed as proposals, not facts.</li>
+    <li>If a passage tried to instruct the model, that is reported rather than hidden.</li>
+    <li>A model that returns nothing usable costs you the prose, not the retrieval: the sources
+      and conflicts still come back, with the reason the answer was rejected.</li>
+  </ol>
+</section>
+
+<section class="panel">
+  <h2>Your workspace is your own</h2>
+  <p>
+    Each person who signs in gets a private workspace. No document, entity or relationship is
+    shared with anyone else, and the boundary is enforced in every storage query rather than in
+    a filter that could be forgotten.
+  </p>
+  <p class="muted">
+    The cost is worth stating plainly: <strong>relationship discovery never spans users.</strong>
+    Two people who upload documents about the same contract get no link between them, because
+    as far as Relata is concerned they are separate corpora.
+  </p>
+</section>
+
+<section class="panel panel-quiet">
+  <h2>Known limitations</h2>
+  <ul class="wont">
+    <li>Scores are heuristic strengths, not calibrated probabilities. The weights were chosen by
+      judgement, not fitted to labelled data.</li>
+    <li>Deterministic entity extraction is narrow: organisations with a legal suffix, people
+      with an honorific, email addresses and dates. Broader coverage comes from the model stage
+      and is labelled as such.</li>
+    <li>Contradiction detection compares figures and dates about the same coarse subject. It
+      will not catch a contradiction expressed entirely in prose.</li>
+    <li>No OCR. A scanned PDF is preserved and flagged as having little extractable text.</li>
+    <li>Answer generation on a CPU-only machine is slow. A small model produces answers that
+      are often not worth reading, though the safeguards still hold.</li>
+    <li>Prompt-injection defences bound the damage; they are not a proof. Treat generated
+      answers as summaries of sources, not as authority.</li>
+  </ul>
+</section>
+{{end}}

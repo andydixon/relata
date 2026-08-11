@@ -1,0 +1,49 @@
+{{define "public_layout.html"}}<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}}{{else}}Relata{{end}}</title>
+<meta name="description" content="Relata stores arbitrary information, discovers evidence-backed relationships between items, and retrieves related knowledge with an explanation of why each result was returned.">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/public.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body class="public">
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<header class="public-masthead">
+  <div class="public-inner">
+    <a class="brand" href="/">Relata</a>
+    <nav aria-label="Main">
+      <ul class="public-nav">
+        <li><a href="/how-it-works">How it works</a></li>
+        <li><a href="/api">API</a></li>
+      </ul>
+    </nav>
+    <div class="public-actions">
+      {{if .SignedIn}}
+        <a class="btn btn-primary" href="/">Open Relata</a>
+      {{else if .OAuthEnabled}}
+        <a class="btn btn-primary" href="/auth/oauth/start">Sign in with {{.ProviderName}}</a>
+      {{else}}
+        <a class="btn btn-primary" href="/login">Sign in</a>
+      {{end}}
+    </div>
+  </div>
+</header>
+
+<main id="main" class="public-page">
+  {{template "content" .}}
+</main>
+
+<footer class="public-footer">
+  <div class="public-inner">
+    <p>Relata {{.Version}} — a self-organising semantic document database.</p>
+    <p class="muted">
+      Nothing on this page is read from stored data. Sign in to reach your own workspace.
+    </p>
+  </div>
+</footer>
+</body>
+</html>{{end}}

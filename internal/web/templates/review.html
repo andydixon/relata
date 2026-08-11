@@ -1,0 +1,48 @@
+{{define "content"}}
+<h1>Relationship review</h1>
+<p class="muted">
+  These relationships were proposed by analysis from the evidence shown under each one.
+  Nothing here is treated as fact until a person confirms it. Rejecting a relationship keeps
+  the proposal and its evidence on record — it is never deleted.
+</p>
+
+<form class="filter-bar" method="get" action="/review">
+  <div class="field">
+    <label for="review_status">Show</label>
+    <select id="review_status" name="review_status">
+      <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Awaiting review</option>
+      <option value="confirmed" {{if eq .Filters.Status "confirmed"}}selected{{end}}>Confirmed</option>
+      <option value="rejected" {{if eq .Filters.Status "rejected"}}selected{{end}}>Rejected</option>
+      <option value="" {{if eq .Filters.Status ""}}selected{{end}}>All</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="type">Relationship type</label>
+    <select id="type" name="type">
+      <option value="">Any</option>
+      {{range relTypes}}<option value="{{.}}" {{if eq $.Filters.Type (printf "%s" .)}}selected{{end}}>{{relTypeLabel .}}</option>{{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="min_score">Minimum strength</label>
+    <input id="min_score" name="min_score" type="number" min="0" max="1" step="0.05" value="{{.Filters.MinScore}}">
+  </div>
+  <button type="submit" class="btn">Filter</button>
+</form>
+
+{{if .Relationships}}
+  {{range .Relationships}}{{template "partial_relationship.html" (dict "R" . "CSRFToken" $.CSRFToken "Direction" "outgoing")}}{{end}}
+
+  <nav class="pagination" aria-label="Relationship pages">
+    {{if .Pagination.PrevURL}}<a class="btn" href="{{.Pagination.PrevURL}}">Previous</a>{{end}}
+    <span class="muted">Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}}</span>
+    {{if .Pagination.NextURL}}<a class="btn" href="{{.Pagination.NextURL}}">Next</a>{{end}}
+  </nav>
+{{else}}
+<div class="empty">
+  <h2>Nothing to review</h2>
+  <p>No relationships match this filter.</p>
+  <p class="muted">Relationships are proposed automatically once items finish processing.</p>
+</div>
+{{end}}
+{{end}}

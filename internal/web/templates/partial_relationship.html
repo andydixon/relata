@@ -1,0 +1,124 @@
+{{define "partial_relationship.html"}}
+{{$r := .R}}
+<article class="relationship" id="rel-{{$r.Rel.ID}}">
+  <header class="rel-head">
+    <p class="rel-title">
+      <a href="/items/{{$r.SourceID}}">{{if $r.SourceTitle}}{{$r.SourceTitle}}{{else}}(item){{end}}</a>
+      <span class="rel-arrow" aria-label="{{relTypeLabel $r.Rel.Type}}">{{relTypeLabel $r.Rel.Type}}</span>
+      <a href="/items/{{$r.TargetID}}">{{if $r.TargetTitle}}{{$r.TargetTitle}}{{else}}(item){{end}}</a>
+    </p>
+    <p class="rel-meta">
+      <span class="metric" title="Heuristic strength computed from the signals below. Not a probability.">
+        Strength <strong>{{score2 $r.Rel.Score}}</strong> ({{strengthLabel $r.Rel.Score}})
+      </span>
+      <span class="pill pill-prov-{{$r.Rel.Provenance}}">{{provenanceLabel $r.Rel.Provenance}}</span>
+      <span class="pill pill-review-{{$r.Rel.ReviewStatus}}">{{$r.Rel.ReviewStatus}}</span>
+      <span class="muted">{{$r.Rel.ScoreVersion}}</span>
+    </p>
+  </header>
+
+  {{if $r.Rel.Inferred}}
+  <p class="inference-note">
+    Proposed by analysis. This is a <strong>suggestion, not an established fact</strong>,
+    until someone confirms it.
+  </p>
+  {{end}}
+
+  {{if $r.Rel.Evidence.SourceExcerpt}}
+  <div class="rel-excerpts">
+    <blockquote><cite>From the first item</cite>{{$r.Rel.Evidence.SourceExcerpt}}</blockquote>
+    {{if $r.Rel.Evidence.TargetExcerpt}}
+    <blockquote><cite>From the second item</cite>{{$r.Rel.Evidence.TargetExcerpt}}</blockquote>
+    {{end}}
+  </div>
+  {{end}}
+
+  <details class="evidence">
+    <summary>Evidence — how this strength was calculated</summary>
+
+    <table class="table table-compact">
+      <caption class="visually-hidden">Signals contributing to the relationship strength</caption>
+      <thead>
+        <tr><th scope="col">Signal</th><th scope="col">Evidence</th>
+            <th scope="col">Strength</th><th scope="col">Weight</th><th scope="col">Contribution</th></tr>
+      </thead>
+      <tbody>
+        {{range $r.Rel.Evidence.Signals}}
+        <tr>
+          <td>{{.Type}}</td>
+          <td>{{.Value}}{{if .Detail}}<br><span class="muted">{{.Detail}}</span>{{end}}</td>
+          <td class="num">{{score2 .Strength}}</td>
+          <td class="num">{{score2 .Weight}}</td>
+          <td class="num">{{score2 .Contribution}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row" colspan="4">Total (capped at 1.00)</th>
+          <td class="num"><strong>{{score2 $r.Rel.Score}}</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {{if $r.Rel.Evidence.SharedEntities}}
+    <p>Shared entities: {{range $r.Rel.Evidence.SharedEntities}}<span class="tag">{{.}}</span>{{end}}</p>
+    {{end}}
+
+    {{if $r.Rel.Evidence.ModelRationale}}
+    <div class="model-opinion">
+      <h4>Model opinion</h4>
+      <p class="muted">
+        A language model{{if $r.Rel.Evidence.ModelVersion}} ({{$r.Rel.Evidence.ModelVersion}}){{end}}
+        described the connection as follows. This is one signal among those above, not the score itself,
+        and it is not a verified fact.
+      </p>
+      <blockquote>{{$r.Rel.Evidence.ModelRationale}}</blockquote>
+    </div>
+    {{end}}
+
+    {{if $r.Rel.ReviewHistory}}
+    <h4>Decision history</h4>
+    <ul class="history-list">
+      {{range $r.Rel.ReviewHistory}}
+      <li>
+        <strong>{{.Action}}</strong> by {{if .ActorName}}{{.ActorName}}{{else}}unknown{{end}}
+        on {{datetime .At}}
+        {{if .FromValue}}<span class="muted">({{.FromValue}} → {{.ToValue}})</span>{{end}}
+        {{if .Note}}<br><span class="note">“{{.Note}}”</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    <p class="muted">
+      History is append-only. Rejecting a relationship never deletes the original proposal or its evidence.
+    </p>
+    {{end}}
+  </details>
+
+  <div class="rel-actions">
+    <form method="post" action="/relationships/{{$r.Rel.ID}}/confirm" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="text" name="note" placeholder="Note (optional)" maxlength="500" aria-label="Note explaining the decision">
+      <button type="submit" class="btn btn-ok"
+        {{if eq $r.Rel.ReviewStatus "confirmed"}}disabled{{end}}>Confirm</button>
+    </form>
+
+    <form method="post" action="/relationships/{{$r.Rel.ID}}/reject" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn-danger"
+        {{if eq $r.Rel.ReviewStatus "rejected"}}disabled{{end}}>Reject</button>
+    </form>
+
+    <form method="post" action="/relationships/{{$r.Rel.ID}}/type" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <label class="visually-hidden" for="type-{{$r.Rel.ID}}">Change relationship type</label>
+      <select id="type-{{$r.Rel.ID}}" name="type">
+        {{range relTypes}}
+        <option value="{{.}}" {{if eq . $r.Rel.Type}}selected{{end}}>{{relTypeLabel .}}</option>
+        {{end}}
+      </select>
+      <button type="submit" class="btn">Change type</button>
+    </form>
+  </div>
+</article>
+{{end}}

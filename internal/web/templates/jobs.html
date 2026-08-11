@@ -1,0 +1,11 @@
+{{define "content"}}
+<h1>Processing queue</h1>
+<p class="muted">
+  Every stage of processing is a background job. Jobs are leased, so a worker that stops
+  unexpectedly returns its work to the queue rather than holding it.
+</p>
+
+<div id="jobs-table" hx-get="/jobs/table" hx-trigger="every 5s" hx-swap="innerHTML">
+  {{template "partial_jobs_table.html" .}}
+</div>
+{{end}}

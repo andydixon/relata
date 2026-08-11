@@ -1,0 +1,1349 @@
+openapi: 3.0.3
+
+info:
+  title: Relata API
+  version: "1.0.0"
+  description: |
+    Relata's REST interface.
+
+    **Authentication.** Every endpoint requires a session cookie obtained by posting the
+    browser login form at `POST /login`. There is no separate API key.
+
+    **CSRF.** State-changing requests (POST, PATCH, DELETE) must carry the session's CSRF
+    token in the `X-CSRF-Token` header. The token is rendered into every page as a hidden
+    `csrf_token` field.
+
+    **Three different scores.** Responses report `query_relevance`, `semantic_similarity` and
+    `relationship_strength` separately. None is a probability, and they must not be compared
+    with one another. See docs/SEARCH_AND_SCORING.md.
+
+servers:
+  - url: http://127.0.0.1:8080
+    description: Default local instance
+
+tags:
+  - name: Items
+  - name: Search
+  - name: Relationships
+  - name: Entities
+  - name: Jobs
+  - name: Health
+
+security:
+  - sessionCookie: []
+
+paths:
+  /api/v1/items:
+    post:
+      tags: [Items]
+      summary: Store pasted text or a JSON document
+      description: |
+        The content type is detected from the content itself; `mime_type` is a hint only.
+        Identical content returns 409 with the existing item's ID unless `allow_duplicate`
+        is set.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateItemRequest'}
+      responses:
+        '202':
+          description: Accepted and queued for processing
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ItemAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Duplicate'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+    get:
+      tags: [Items]
+      summary: List items
+      parameters:
+        - {name: source_type, in: query, schema: {type: string}, description: 'Comma-separated. An unrecognised value is rejected.'}
+        - {name: mime_type, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: string}}
+        - {name: title, in: query, schema: {type: string}, description: 'Literal substring; metacharacters are escaped.'}
+        - {name: content_hash, in: query, schema: {type: string}}
+        - {name: created_from, in: query, schema: {type: string, format: date}}
+        - {name: created_to, in: query, schema: {type: string, format: date}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: A page of items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Item'}}
+                  pagination: {$ref: '#/components/schemas/Pagination'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /api/v1/items/upload:
+    post:
+      tags: [Items]
+      summary: Upload a document
+      description: |
+        Accepts plain text, Markdown, JSON, PDF and DOCX. The type is verified from the file's
+        content, not its name or declared type. Archives and executables are refused.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+                title: {type: string, maxLength: 300}
+                source_type: {type: string}
+                created_at: {type: string, format: date}
+                allow_duplicate: {type: string, enum: ['true', 'false']}
+      responses:
+        '202':
+          description: Accepted and queued for processing
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ItemAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '409': {$ref: '#/components/responses/Duplicate'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+
+  /api/v1/items/{id}:
+    parameters: [{$ref: '#/components/parameters/ItemID'}]
+    get:
+      tags: [Items]
+      summary: Retrieve an item with everything derived from it
+      responses:
+        '200':
+          description: The item, its chunks, entities, claims, relationships and processing history
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ItemDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Items]
+      summary: Delete an item, or preview what deletion would remove
+      description: |
+        With `dry_run=true`, reports what would be removed and changes nothing.
+
+        Without it, the item is hidden immediately and its chunks, vectors, claims,
+        relationships and any entities that only it referenced are removed asynchronously.
+        Audit events and processing runs are retained.
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+        - {name: dry_run, in: query, schema: {type: boolean}}
+      responses:
+        '200':
+          description: The deletion plan (dry run only)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run: {type: boolean}
+                  plan: {$ref: '#/components/schemas/DeletionPlan'}
+                  note: {type: string}
+        '202':
+          description: Deletion queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: {type: string, format: uuid}
+                  job_id: {type: string, format: uuid}
+                  status: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/items/{id}/reprocess:
+    parameters: [{$ref: '#/components/parameters/ItemID'}]
+    post:
+      tags: [Items]
+      summary: Process an item again
+      description: |
+        Opens a new processing run and restarts the pipeline. Derived records are replaced
+        rather than duplicated, and human review decisions on relationships are preserved.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: {type: string}
+      responses:
+        '202':
+          description: Queued for reprocessing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id: {type: string, format: uuid}
+                  job_id: {type: string, format: uuid}
+                  status: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/items/{id}/relationships:
+    parameters: [{$ref: '#/components/parameters/ItemID'}]
+    get:
+      tags: [Relationships]
+      summary: An item's incoming and outgoing relationships
+      parameters:
+        - {name: type, in: query, schema: {type: string}, description: Comma-separated relationship types
+          }
+        - {name: provenance, in: query, schema: {type: string}}
+        - {name: review_status, in: query, schema: {type: string}}
+        - {name: confirmed_only, in: query, schema: {type: boolean}}
+        - {name: min_score, in: query, schema: {type: number, minimum: 0, maximum: 1}}
+        - {name: direction, in: query, schema: {type: string, enum: [out, in, both]}}
+      responses:
+        '200':
+          description: Relationships with their evidence and explanations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id: {type: string, format: uuid}
+                  outgoing: {type: array, items: {$ref: '#/components/schemas/RelationshipView'}}
+                  incoming: {type: array, items: {$ref: '#/components/schemas/RelationshipView'}}
+                  note: {type: string}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /api/v1/search:
+    get:
+      tags: [Search]
+      summary: Hybrid search across stored items
+      description: |
+        Combines exact matching, MongoDB text search, vector similarity, entity matching and
+        relationship expansion. Every result explains why it matched.
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 2000}}
+        - {name: source_type, in: query, schema: {type: string}}
+        - {name: mime_type, in: query, schema: {type: string}}
+        - {name: entity_id, in: query, schema: {type: string}, description: Comma-separated UUIDs}
+        - {name: relationship_type, in: query, schema: {type: string}}
+        - {name: created_from, in: query, schema: {type: string, format: date}}
+        - {name: created_to, in: query, schema: {type: string, format: date}}
+        - {name: confirmed_only, in: query, schema: {type: boolean}, description: Follow only relationships a person confirmed}
+        - {name: min_relationship_strength, in: query, schema: {type: number, minimum: 0, maximum: 1}}
+        - {name: expand, in: query, schema: {type: boolean, default: true}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: Ranked results with explanations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  search: {$ref: '#/components/schemas/SearchResponse'}
+                  score_guide:
+                    type: object
+                    description: What each score means, restated on every response
+                    properties:
+                      query_relevance: {type: string}
+                      semantic_similarity: {type: string}
+                      relationship_strength: {type: string}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /api/v1/search/answer:
+    post:
+      tags: [Search]
+      summary: Answer a question using only stored material
+      description: |
+        Retrieves relevant items and generates an answer from them alone. Citations are
+        resolved against the passages actually supplied, so a fabricated reference cannot
+        point at a real item. Conflicts between sources are surfaced, never reconciled.
+
+        Requires a configured language model; returns 503 otherwise.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              additionalProperties: false
+              properties:
+                question: {type: string, maxLength: 2000}
+                source_types: {type: array, items: {type: string}}
+                entity_ids: {type: array, items: {type: string, format: uuid}}
+                confirmed_only: {type: boolean}
+                limit: {type: integer}
+      responses:
+        '200':
+          description: A cited answer
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Answer'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '502':
+          description: The model returned output that failed validation. Nothing was stored.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503': {$ref: '#/components/responses/FeatureDisabled'}
+
+  /api/v1/relationships:
+    get:
+      tags: [Relationships]
+      summary: List relationships
+      parameters:
+        - {name: type, in: query, schema: {type: string}}
+        - {name: provenance, in: query, schema: {type: string}}
+        - {name: review_status, in: query, schema: {type: string}}
+        - {name: confirmed_only, in: query, schema: {type: boolean}}
+        - {name: min_score, in: query, schema: {type: number, minimum: 0, maximum: 1}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: A page of relationships
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationships: {type: array, items: {$ref: '#/components/schemas/RelationshipView'}}
+                  pagination: {$ref: '#/components/schemas/Pagination'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+    post:
+      tags: [Relationships]
+      summary: Record a relationship asserted by a person
+      description: |
+        Stored with `explicit` provenance and `confirmed` review status: a human statement is
+        not a proposal awaiting review. Both items must be in the caller's workspace.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_id, target_id, type]
+              additionalProperties: false
+              properties:
+                source_id: {type: string, format: uuid}
+                target_id: {type: string, format: uuid}
+                type: {$ref: '#/components/schemas/RelationshipType'}
+                note: {type: string, maxLength: 2000}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship: {$ref: '#/components/schemas/RelationshipView'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/relationships/{id}:
+    parameters: [{$ref: '#/components/parameters/RelationshipID'}]
+    patch:
+      tags: [Relationships]
+      summary: Change a relationship's type
+      description: |
+        The original type and provenance are preserved on the record, and the change is
+        appended to the relationship's review history.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              additionalProperties: false
+              properties:
+                type: {$ref: '#/components/schemas/RelationshipType'}
+                note: {type: string, maxLength: 2000}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship: {$ref: '#/components/schemas/RelationshipView'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/relationships/{id}/confirm:
+    parameters: [{$ref: '#/components/parameters/RelationshipID'}]
+    post:
+      tags: [Relationships]
+      summary: Confirm a relationship
+      description: |
+        Adds a user-confirmation signal, raising the score to 1.00 through the same arithmetic
+        as every other signal. The original proposal and its evidence are retained.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                note: {type: string, maxLength: 2000}
+      responses:
+        '200':
+          description: Confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship: {$ref: '#/components/schemas/RelationshipView'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/relationships/{id}/reject:
+    parameters: [{$ref: '#/components/parameters/RelationshipID'}]
+    post:
+      tags: [Relationships]
+      summary: Reject a relationship
+      description: |
+        The relationship is retained with its evidence and history; its score falls to zero
+        and it no longer influences search. Nothing is deleted.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                note: {type: string, maxLength: 2000}
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship: {$ref: '#/components/schemas/RelationshipView'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/entities:
+    get:
+      tags: [Entities]
+      summary: List extracted entities
+      parameters:
+        - {name: q, in: query, schema: {type: string}, description: Literal substring of the canonical name}
+        - {name: type, in: query, schema: {type: string}}
+        - {name: item_id, in: query, schema: {type: string, format: uuid}}
+        - {name: min_mentions, in: query, schema: {type: integer}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: A page of entities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities: {type: array, items: {$ref: '#/components/schemas/Entity'}}
+                  pagination: {$ref: '#/components/schemas/Pagination'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /api/v1/entities/{id}:
+    parameters: [{$ref: '#/components/parameters/EntityID'}]
+    get:
+      tags: [Entities]
+      summary: An entity with its aliases and citing items
+      responses:
+        '200':
+          description: The entity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity: {$ref: '#/components/schemas/Entity'}
+                  aliases: {type: array, items: {$ref: '#/components/schemas/EntityAlias'}}
+                  items: {type: array, items: {$ref: '#/components/schemas/Item'}}
+                  note: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/aliases/{id}/confirm:
+    parameters: [{$ref: '#/components/parameters/AliasID'}]
+    post:
+      tags: [Entities]
+      summary: Confirm that two similar names refer to the same thing
+      description: |
+        The two entities remain **separate records**. A confirmed alias becomes evidence when
+        relationships are discovered, weighted below an exact name match. Relata never merges
+        entities automatically, and confirming does not merge them either.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      responses:
+        '200':
+          description: Confirmed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AliasDecision'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/aliases/{id}/reject:
+    parameters: [{$ref: '#/components/parameters/AliasID'}]
+    post:
+      tags: [Entities]
+      summary: Record that two similar names refer to different things
+      description: |
+        The proposal is retained so that it is not offered again as new, and the alias stops
+        contributing evidence.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AliasDecision'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/jobs:
+    get:
+      tags: [Jobs]
+      summary: List background jobs
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: A page of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: {type: array, items: {$ref: '#/components/schemas/Job'}}
+                  pagination: {$ref: '#/components/schemas/Pagination'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+
+  /api/v1/jobs/{id}/retry:
+    parameters: [{$ref: '#/components/parameters/JobID'}]
+    post:
+      tags: [Jobs]
+      summary: Return a failed job to the queue
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      responses:
+        '200':
+          description: Requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: {$ref: '#/components/schemas/Job'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: The job does not exist or is not in a retryable state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+
+  /api/v1/tokens:
+    get:
+      tags: [Tokens]
+      summary: List your API tokens
+      description: |
+        Returns the caller's own tokens, including revoked and expired ones so the
+        history stays visible. No secret is returned — only a hash was ever stored.
+
+        **Requires a signed-in session.** An API token cannot list, create or revoke
+        tokens: a leaked credential must not be able to mint its own replacements.
+      responses:
+        '200':
+          description: The caller's tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items: {$ref: '#/components/schemas/APIToken'}
+                  total: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403':
+          description: The request authenticated with an API token rather than a session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+    post:
+      tags: [Tokens]
+      summary: Issue an API token
+      description: |
+        The secret is returned **once** and cannot be retrieved again.
+
+        Granted scopes are the intersection of those requested and those the caller's
+        role permits, so a token never carries more authority than its creator.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes]
+              properties:
+                name: {type: string, maxLength: 80}
+                scopes:
+                  type: array
+                  minItems: 1
+                  items: {type: string, enum: [ingest, query, review]}
+                ttl_hours:
+                  type: integer
+                  description: Optional. The configured default applies when absent, capped at the configured maximum.
+      responses:
+        '201':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: {$ref: '#/components/schemas/APIToken'}
+                  secret:
+                    type: string
+                    description: The credential. Shown once; only its hash is stored.
+                  warning: {type: string}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403':
+          description: The request authenticated with an API token rather than a session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+
+  /api/v1/tokens/{id}:
+    parameters: [{$ref: '#/components/parameters/TokenID'}]
+    delete:
+      tags: [Tokens]
+      summary: Revoke an API token
+      description: |
+        The record is kept rather than deleted, so the token's existence and its end stay
+        visible. A revoked token is refused on its next use; there is no cached grant.
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: {type: boolean}
+                  id: {type: string, format: uuid}
+        '401': {$ref: '#/components/responses/Unauthorised'}
+        '403':
+          description: The request authenticated with an API token rather than a session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness
+      description: Checks only that the process is running. Unauthenticated.
+      security: []
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  version: {type: string}
+                  uptime_sec: {type: integer}
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness
+      description: |
+        MongoDB and Qdrant are required. AI providers are reported but not required:
+        ingestion, keyword search and browsing work without them. Unauthenticated,
+        and therefore reports *that* a dependency is unreachable but never *why* —
+        see the server log for the cause.
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Readiness'}
+        '503':
+          description: A required dependency is unavailable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Readiness'}
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: relata_session
+
+  parameters:
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: {type: string}
+      description: The session's CSRF token, rendered into every page as a hidden `csrf_token` field.
+    ItemID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RelationshipID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    EntityID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    TokenID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    JobID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AliasID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 20}
+    Offset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+
+  responses:
+    BadRequest:
+      description: The request was rejected by validation
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorised:
+      description: Authentication is required
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Forbidden:
+      description: The caller's role does not permit this, or the CSRF check failed
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: |
+        No such record in the caller's workspace. A record in another workspace is
+        reported identically, so probing cannot confirm that an ID exists elsewhere.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Duplicate:
+      description: Identical content already exists
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    TooLarge:
+      description: The body exceeds the configured limit
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    UnsupportedMedia:
+      description: The content type is not supported
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    FeatureDisabled:
+      description: The feature requires a language model, which is not configured
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: A stable, machine-readable code. Clients may branch on it.
+              enum:
+                [invalid_request, validation_failed, unauthorised, forbidden, not_found,
+                 duplicate_content, conflict, payload_too_large, unsupported_media_type,
+                 rate_limited, csrf_check_failed, dependency_unavailable,
+                 model_output_invalid, feature_disabled, internal_error]
+            message: {type: string, description: Safe to display. Never contains internal detail.}
+            fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: {type: string}
+                  message: {type: string}
+            request_id: {type: string, description: Quote this when reporting a problem.}
+            detail: {type: object, additionalProperties: {type: string}}
+
+    Pagination:
+      type: object
+      properties:
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+        has_more: {type: boolean}
+
+    SourceType:
+      type: string
+      enum: [note, document, json, email, transcript, markdown]
+
+    ProcessingStatus:
+      type: string
+      enum: [pending, parsing, chunking, embedding, analysing, relating, ready, failed,
+             partial, deleting, tombstoned]
+
+    RelationshipType:
+      type: string
+      enum: [similar_to, mentions, involves, supports, contradicts, updates, supersedes,
+             provides_context_for, possibly_explains, occurred_before, occurred_after,
+             derived_from, same_entity_as]
+
+    Provenance:
+      type: string
+      description: How the relationship came to exist. `model_inferred` is a proposal, not a fact.
+      enum: [explicit, deterministic, model_inferred, user_confirmed, user_rejected]
+
+    ReviewStatus:
+      type: string
+      enum: [pending, confirmed, rejected, edited]
+
+    EntityType:
+      type: string
+      enum: [person, organisation, location, product, event, date, subject, concept]
+
+    CreateItemRequest:
+      type: object
+      required: [content]
+      additionalProperties: false
+      description: Unknown fields are rejected.
+      properties:
+        title: {type: string, maxLength: 300}
+        content: {type: string}
+        source_type: {$ref: '#/components/schemas/SourceType'}
+        mime_type: {type: string, description: A hint only; the type is detected from the content.}
+        filename: {type: string}
+        metadata: {type: object, additionalProperties: {type: string}}
+        created_at:
+          type: string
+          format: date-time
+          description: When the information itself dates from. Must not be in the future.
+        allow_duplicate:
+          type: boolean
+          description: Store even when identical content already exists.
+
+    ItemAccepted:
+      type: object
+      properties:
+        item: {$ref: '#/components/schemas/Item'}
+        job_id: {type: string, format: uuid}
+        status: {type: string}
+
+    Item:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        title: {type: string}
+        source_type: {$ref: '#/components/schemas/SourceType'}
+        mime_type: {type: string}
+        original_filename: {type: string}
+        original_text: {type: string, description: The verbatim text supplied, never rewritten.}
+        extracted_text: {type: string}
+        size_bytes: {type: integer}
+        content_hash: {type: string, description: SHA-256 of the supplied bytes.}
+        metadata: {type: object, additionalProperties: {type: string}}
+        created_at: {type: string, format: date-time}
+        ingested_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        status: {$ref: '#/components/schemas/ProcessingStatus'}
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              message: {type: string}
+              detail: {type: string}
+        error: {type: string}
+        parser_version: {type: string}
+        embedding_model: {type: string}
+        analysis_model: {type: string}
+        score_version: {type: string}
+        chunk_count: {type: integer}
+        entity_count: {type: integer}
+        claim_count: {type: integer}
+        relationship_count: {type: integer}
+        duplicate_of: {type: string, format: uuid}
+        deleted: {type: boolean}
+
+    Chunk:
+      type: object
+      properties:
+        id: {type: string, format: uuid, description: Also the Qdrant point ID.}
+        item_id: {type: string, format: uuid}
+        sequence: {type: integer}
+        text: {type: string}
+        content_hash: {type: string}
+        start_offset: {type: integer, description: Byte offset into the item's extracted text.}
+        end_offset: {type: integer}
+        page: {type: integer}
+        section: {type: string}
+        heading: {type: string}
+        embedding_model: {type: string}
+        embedded: {type: boolean}
+
+    Claim:
+      type: object
+      description: A record that a source *said* something. Not a fact.
+      properties:
+        id: {type: string, format: uuid}
+        item_id: {type: string, format: uuid}
+        chunk_id: {type: string, format: uuid}
+        statement: {type: string, description: A short normalised rendering.}
+        source_ref:
+          type: object
+          description: Always points at real text. A claim never loses this link.
+          properties:
+            item_id: {type: string, format: uuid}
+            chunk_id: {type: string, format: uuid}
+            start: {type: integer}
+            end: {type: integer}
+            quote: {type: string, description: The exact source wording.}
+            page: {type: integer}
+        attribution: {type: string}
+        nature: {type: string, enum: [quoted, paraphrased, inferred]}
+        subject: {type: string}
+        numbers: {type: array, items: {type: number}}
+        dates: {type: array, items: {type: string}}
+        polarity: {type: integer, enum: [-1, 1]}
+        method: {type: string, enum: [deterministic, model, user]}
+        model_version: {type: string}
+        confidence: {type: number}
+
+    Entity:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        canonical_name: {type: string}
+        normalised_key: {type: string}
+        type: {$ref: '#/components/schemas/EntityType'}
+        aliases: {type: array, items: {type: string}}
+        item_ids: {type: array, items: {type: string, format: uuid}}
+        source_refs: {type: array, items: {type: object}}
+        method: {type: string, enum: [deterministic, model, user]}
+        evidence_score:
+          type: number
+          description: How well attested the entity is. Not a probability.
+        mentions: {type: integer}
+        model_version: {type: string}
+
+    EntityAlias:
+      type: object
+      description: A proposal that two names may refer to the same thing. Never applied automatically.
+      properties:
+        id: {type: string, format: uuid}
+        entity_id: {type: string, format: uuid}
+        alias: {type: string}
+        candidate_entity_id: {type: string, format: uuid}
+        status: {type: string, enum: [candidate, confirmed, rejected]}
+        similarity: {type: number}
+        reason: {type: string}
+
+    Signal:
+      type: object
+      description: One explicit contribution to a relationship's strength.
+      properties:
+        type:
+          type: string
+          enum: [semantic_similarity, shared_entity, alias_entity, shared_concept,
+                 temporal_proximity, shared_metadata, claim_support, claim_contradiction,
+                 model_classification, user_confirmation, user_rejection, content_hash_match]
+        value: {type: string, description: The human-readable evidence.}
+        strength: {type: number, minimum: 0, maximum: 1}
+        weight: {type: number}
+        detail: {type: string}
+
+    Relationship:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        source_kind: {type: string, enum: [item, chunk, entity, claim]}
+        source_id: {type: string, format: uuid}
+        target_kind: {type: string, enum: [item, chunk, entity, claim]}
+        target_id: {type: string, format: uuid}
+        type: {$ref: '#/components/schemas/RelationshipType'}
+        provenance: {$ref: '#/components/schemas/Provenance'}
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            A HEURISTIC relationship strength derived from the signals below, under the
+            named scoring version. NOT a calibrated probability.
+        score_version: {type: string}
+        evidence:
+          type: object
+          properties:
+            signals: {type: array, items: {$ref: '#/components/schemas/Signal'}}
+            source_chunk_ids: {type: array, items: {type: string}}
+            target_chunk_ids: {type: array, items: {type: string}}
+            shared_entities: {type: array, items: {type: string}}
+            source_excerpt: {type: string}
+            target_excerpt: {type: string}
+            model_rationale: {type: string, description: A model's words. Not a verified fact.}
+            model_version: {type: string}
+        original_type: {$ref: '#/components/schemas/RelationshipType'}
+        original_provenance: {$ref: '#/components/schemas/Provenance'}
+        review_status: {$ref: '#/components/schemas/ReviewStatus'}
+        review_history:
+          type: array
+          description: Append-only. A rejection never erases the original proposal.
+          items:
+            type: object
+            properties:
+              at: {type: string, format: date-time}
+              action: {type: string}
+              actor_id: {type: string}
+              actor_name: {type: string}
+              note: {type: string}
+              from_value: {type: string}
+              to_value: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    RelationshipView:
+      allOf:
+        - {$ref: '#/components/schemas/Relationship'}
+        - type: object
+          properties:
+            explanation:
+              type: array
+              items: {type: string}
+              description: The score's arithmetic in plain English.
+            source_title: {type: string}
+            target_title: {type: string}
+            score_meaning: {type: string}
+
+    ItemDetail:
+      type: object
+      properties:
+        item: {$ref: '#/components/schemas/Item'}
+        chunks: {type: array, items: {$ref: '#/components/schemas/Chunk'}}
+        entities: {type: array, items: {$ref: '#/components/schemas/Entity'}}
+        claims: {type: array, items: {$ref: '#/components/schemas/Claim'}}
+        outgoing_relationships: {type: array, items: {$ref: '#/components/schemas/RelationshipView'}}
+        incoming_relationships: {type: array, items: {$ref: '#/components/schemas/RelationshipView'}}
+        processing_runs:
+          type: array
+          description: Retained across reprocessing, for audit.
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              reason: {type: string}
+              started_at: {type: string, format: date-time}
+              ended_at: {type: string, format: date-time}
+              outcome: {type: string}
+              error: {type: string}
+              parser_version: {type: string}
+              embedding_model: {type: string}
+              analysis_model: {type: string}
+              score_version: {type: string}
+              stats: {type: object, additionalProperties: {type: integer}}
+
+    SearchResponse:
+      type: object
+      properties:
+        query: {type: string}
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+        took_ms: {type: integer}
+        notes:
+          type: array
+          items: {type: string}
+          description: Advisory messages, such as vector search being unavailable.
+        results: {type: array, items: {$ref: '#/components/schemas/SearchResult'}}
+
+    SearchResult:
+      type: object
+      properties:
+        item: {$ref: '#/components/schemas/Item'}
+        query_relevance:
+          type: number
+          description: How well this item answers THIS query, relative to the best result. Not a probability.
+        semantic_similarity:
+          type: number
+          description: |
+            Best cosine similarity of any matching section. Reported separately because
+            similarity is not relevance and not evidence of a factual relationship.
+        excerpt: {type: string}
+        why_matched: {type: array, items: {type: string}}
+        contributions:
+          type: array
+          items:
+            type: object
+            properties:
+              source: {type: string}
+              rank: {type: integer}
+              weight: {type: number}
+              score: {type: number}
+              detail: {type: string}
+        matched_chunks:
+          type: array
+          items:
+            type: object
+            properties:
+              chunk_id: {type: string, format: uuid}
+              sequence: {type: integer}
+              text: {type: string}
+              semantic_similarity: {type: number}
+              page: {type: integer}
+              section: {type: string}
+        matched_entities:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+              type: {$ref: '#/components/schemas/EntityType'}
+        related_items: {type: array, items: {$ref: '#/components/schemas/RelatedItem'}}
+        via_relationship:
+          allOf: [{$ref: '#/components/schemas/RelatedItem'}]
+          description: Set when the item was reached by relationship expansion rather than a direct match.
+        rank_version: {type: string}
+
+    RelatedItem:
+      type: object
+      properties:
+        relationship_id: {type: string, format: uuid}
+        item_id: {type: string, format: uuid}
+        title: {type: string}
+        type: {$ref: '#/components/schemas/RelationshipType'}
+        provenance: {$ref: '#/components/schemas/Provenance'}
+        relationship_strength:
+          type: number
+          description: A heuristic strength, NOT query relevance and NOT a probability.
+        score_version: {type: string}
+        review_status: {$ref: '#/components/schemas/ReviewStatus'}
+        explanation: {type: array, items: {type: string}}
+        direction: {type: string, enum: [incoming, outgoing]}
+
+    Answer:
+      type: object
+      properties:
+        question: {type: string}
+        answer: {type: string, description: Generated from the sources below and nothing else.}
+        sufficient:
+          type: boolean
+          description: False when the stored material does not support an answer.
+        sources_used:
+          type: array
+          items:
+            type: object
+            properties:
+              ref: {type: string, description: The opaque handle shown to the model (S1, S2…).}
+              item_id: {type: string, format: uuid}
+              title: {type: string}
+              excerpt: {type: string}
+              date: {type: string}
+              cited: {type: boolean, description: Whether the answer actually referenced it.}
+        uncertainty_and_conflicts:
+          type: array
+          items: {type: string}
+          description: |
+            Disagreements between sources, insufficiency, reliance on inferred
+            relationships, and any prompt-injection attempt noticed. Never suppressed.
+        inferred_relationships_used:
+          type: array
+          items: {$ref: '#/components/schemas/RelatedItem'}
+          description: Links that influenced retrieval but are proposals, not facts.
+        model: {type: string}
+        retrieved_items: {type: integer}
+        took_ms: {type: integer}
+        prompt_injection_noticed: {type: boolean}
+
+    DeletionPlan:
+      type: object
+      properties:
+        item_id: {type: string, format: uuid}
+        title: {type: string}
+        chunks: {type: integer}
+        vectors: {type: integer}
+        claims: {type: integer}
+        relationships: {type: integer}
+        orphaned_entities:
+          type: array
+          items: {type: string}
+          description: Entities only this item references; they will be removed.
+        shared_entities_retained:
+          type: array
+          items: {type: string}
+          description: Entities referenced elsewhere; they will be kept.
+        original_file: {type: string}
+        queued_jobs: {type: integer}
+
+    AliasDecision:
+      type: object
+      properties:
+        alias_id: {type: string, format: uuid}
+        status: {type: string, enum: [candidate, confirmed, rejected]}
+        note:
+          type: string
+          description: States that the entities remain separate records.
+
+    Job:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        type:
+          type: string
+          enum: [parse_item, chunk_item, generate_embeddings, extract_entities, extract_claims,
+                 discover_relationships, reprocess_item, delete_item_data, reembed_workspace]
+        status: {type: string, enum: [pending, running, succeeded, failed, cancelled]}
+        item_id: {type: string, format: uuid}
+        priority: {type: integer}
+        run_after: {type: string, format: date-time}
+        attempts: {type: integer}
+        max_attempts: {type: integer}
+        lease_owner: {type: string}
+        lease_expires: {type: string, format: date-time}
+        last_error: {type: string}
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              number: {type: integer}
+              started_at: {type: string, format: date-time}
+              ended_at: {type: string, format: date-time}
+              worker: {type: string}
+              error: {type: string}
+              error_class: {type: string, enum: [transient, permanent, timeout, cancelled, invalid_model_output]}
+              duration_ms: {type: integer}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+
+    APIToken:
+      type: object
+      description: |
+        An API token as returned by the API. There is no field for the secret because
+        there is no secret to return: only its SHA-256 hash was stored.
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        prefix:
+          type: string
+          description: The leading, non-secret portion, kept so tokens can be told apart.
+        scopes:
+          type: array
+          items: {type: string, enum: [ingest, query, review]}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
+        status: {type: string, enum: [active, expired, revoked]}
+
+    Readiness:
+      type: object
+      properties:
+        status: {type: string, enum: [ready, 'not ready']}
+        version: {type: string}
+        note: {type: string}
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status: {type: string, enum: [ok, unavailable]}
+              detail:
+                type: string
+                description: |
+                  A fixed description of what an unavailable dependency means for the
+                  service. Absent when the dependency is ok. It never carries the
+                  underlying error: this endpoint is unauthenticated, and driver errors
+                  embed hosts, ports and connection-string credentials. The cause is
+                  logged server-side with the request ID.
+              required:
+                type: boolean
+                description: AI providers are false; MongoDB and Qdrant are true.

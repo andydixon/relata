@@ -1,0 +1,42 @@
+{{define "partial_jobs_table.html"}}
+<ul class="stat-grid stat-grid-compact">
+  <li class="stat"><span class="stat-value">{{.Counts.Pending}}</span><span class="stat-label">Pending</span></li>
+  <li class="stat"><span class="stat-value">{{.Counts.Running}}</span><span class="stat-label">Running</span></li>
+  <li class="stat"><span class="stat-value">{{.Counts.Succeeded}}</span><span class="stat-label">Succeeded</span></li>
+  <li class="stat {{if gt .Counts.Failed 0}}stat-warn{{end}}"><span class="stat-value">{{.Counts.Failed}}</span><span class="stat-label">Failed</span></li>
+</ul>
+
+{{if .Jobs}}
+<table class="table">
+  <caption class="visually-hidden">Background jobs</caption>
+  <thead>
+    <tr>
+      <th scope="col">Job</th><th scope="col">Item</th><th scope="col">Status</th>
+      <th scope="col">Attempts</th><th scope="col">Updated</th><th scope="col">Last error</th><th scope="col"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Jobs}}
+    <tr>
+      <td>{{.Type}}</td>
+      <td>{{if .ItemID}}<a href="/items/{{.ItemID}}">item</a>{{else}}—{{end}}</td>
+      <td><span class="pill pill-job-{{.Status}}">{{.Status}}</span></td>
+      <td class="num">{{.Attempts}} / {{.MaxAttempts}}</td>
+      <td>{{ago .UpdatedAt}}</td>
+      <td class="error-cell">{{if .LastError}}{{truncate 160 .LastError}}{{else}}—{{end}}</td>
+      <td>
+        {{if eq .Status "failed"}}
+        <form method="post" action="/jobs/{{.ID}}/retry" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-small">Retry</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty"><h2>The queue is empty</h2><p>No background jobs are recorded for this workspace.</p></div>
+{{end}}
+{{end}}

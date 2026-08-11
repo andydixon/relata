@@ -1,0 +1,117 @@
+{{define "partial_search_results.html"}}
+<section aria-labelledby="results-heading">
+  <h2 id="results-heading">
+    {{if .Results.Results}}{{.Results.Total}} result{{if ne .Results.Total 1}}s{{end}}{{else}}No results{{end}}
+    <span class="muted">({{.Results.TookMS}} ms)</span>
+  </h2>
+
+  {{range .Results.Notes}}<p class="flash flash-warn" role="status">{{.}}</p>{{end}}
+
+  {{if .Results.Results}}
+  <p class="score-key">
+    <strong>Query relevance</strong> is how well an item answers this query.
+    <strong>Similarity</strong> is how close its wording is to yours.
+    <strong>Relationship strength</strong> is how well evidenced a link between two items is.
+    These are three different measurements; none of them is a probability.
+  </p>
+
+  <ol class="result-list">
+    {{range .Results.Results}}
+    <li class="result">
+      <h3><a href="/items/{{.Item.ID}}">{{.Item.Title}}</a></h3>
+
+      <p class="result-scores">
+        <span class="metric" title="How well this item answers your query, relative to the best result">
+          Query relevance <strong>{{score2 .QueryRelevance}}</strong>
+        </span>
+        {{if .SemanticSimilarity}}
+        <span class="metric" title="Cosine similarity of the closest matching section. Similar wording is not proof of a factual relationship.">
+          Similarity <strong>{{score2 .SemanticSimilarity}}</strong>
+        </span>
+        {{end}}
+        <span class="pill pill-{{.Item.Status}}">{{statusLabel .Item.Status}}</span>
+        <span class="muted">{{.Item.SourceType}} · {{date .Item.CreatedAt}}</span>
+      </p>
+
+      {{if .ViaRelationship}}
+      <p class="via-note">
+        Not a direct match. Reached because this item is
+        <strong>{{relTypeLabel .ViaRelationship.Type}}</strong>
+        a matching item — strength {{score2 .ViaRelationship.Strength}}
+        ({{provenanceLabel .ViaRelationship.Provenance}}).
+      </p>
+      {{end}}
+
+      <p class="excerpt">{{.Excerpt}}</p>
+
+      <details class="why">
+        <summary>Why this matched</summary>
+        <ul class="why-list">
+          {{range .WhyMatched}}<li>{{.}}</li>{{end}}
+        </ul>
+
+        {{if .MatchedEntities}}
+        <p class="matched-entities">
+          Matching entities:
+          {{range .MatchedEntities}}<a class="tag" href="/entities/{{.ID}}">{{.Name}}</a>{{end}}
+        </p>
+        {{end}}
+
+        {{if .MatchedChunks}}
+        <div class="matched-chunks">
+          <h4>Matching sections</h4>
+          <ul>
+            {{range .MatchedChunks}}
+            <li>
+              <span class="chunk-loc">
+                Section {{add .Sequence 1}}{{if .Page}}, page {{.Page}}{{end}}{{if .Section}} — {{.Section}}{{end}}
+                {{if .Similarity}}<span class="muted">(similarity {{score2 .Similarity}})</span>{{end}}
+              </span>
+              <blockquote>{{truncate 400 .Text}}</blockquote>
+            </li>
+            {{end}}
+          </ul>
+        </div>
+        {{end}}
+
+        {{if .Related}}
+        <div class="related">
+          <h4>Related items</h4>
+          <ul>
+            {{range .Related}}
+            <li>
+              <a href="/items/{{.ItemID}}">{{if .Title}}{{.Title}}{{else}}(untitled){{end}}</a>
+              — {{relTypeLabel .Type}},
+              strength {{score2 .Strength}} ({{strengthLabel .Strength}}),
+              {{provenanceLabel .Provenance}}
+            </li>
+            {{end}}
+          </ul>
+        </div>
+        {{end}}
+      </details>
+    </li>
+    {{end}}
+  </ol>
+
+  {{if .Pagination.HasMore}}
+  <nav class="pagination" aria-label="Results pages">
+    {{if .Pagination.PrevURL}}<a class="btn" href="{{.Pagination.PrevURL}}">Previous</a>{{end}}
+    <span class="muted">Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Results.Total}}</span>
+    {{if .Pagination.NextURL}}<a class="btn" href="{{.Pagination.NextURL}}">Next</a>{{end}}
+  </nav>
+  {{end}}
+
+  {{else}}
+  <div class="empty">
+    <h3>Nothing matched</h3>
+    <p>No stored item matched “{{.Query.Text}}”.</p>
+    <ul>
+      <li>Check that items have finished processing on the <a href="/jobs">queue</a> page.</li>
+      <li>Try fewer or broader words, or clear the filters.</li>
+      <li>Meaning-based search needs an embedding model; check <a href="/settings">Settings</a>.</li>
+    </ul>
+  </div>
+  {{end}}
+</section>
+{{end}}

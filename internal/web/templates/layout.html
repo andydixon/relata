@@ -1,0 +1,56 @@
+{{define "layout.html"}}<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}} — Relata{{else}}Relata{{end}}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+
+{{if .Principal}}
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="/">Relata</a>
+    <nav aria-label="Main">
+      <ul class="nav-list">
+        <li><a href="/" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>Dashboard</a></li>
+        <li><a href="/search" {{if eq .Nav "search"}}aria-current="page"{{end}}>Search</a></li>
+        <li><a href="/items" {{if eq .Nav "items"}}aria-current="page"{{end}}>Items</a></li>
+        <li><a href="/add" {{if eq .Nav "add"}}aria-current="page"{{end}}>Add text</a></li>
+        <li><a href="/upload" {{if eq .Nav "upload"}}aria-current="page"{{end}}>Upload</a></li>
+        <li><a href="/review" {{if eq .Nav "review"}}aria-current="page"{{end}}>Review{{if .PendingReview}} <span class="badge" aria-label="{{.PendingReview}} awaiting review">{{.PendingReview}}</span>{{end}}</a></li>
+        <li><a href="/entities" {{if eq .Nav "entities"}}aria-current="page"{{end}}>Entities</a></li>
+        <li><a href="/jobs" {{if eq .Nav "jobs"}}aria-current="page"{{end}}>Queue</a></li>
+        <li><a href="/settings" {{if eq .Nav "settings"}}aria-current="page"{{end}}>Settings</a></li>
+      </ul>
+    </nav>
+    <form class="signout" method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <span class="whoami">{{.Principal.Username}}</span>
+      <button type="submit" class="btn btn-quiet">Sign out</button>
+    </form>
+  </div>
+</header>
+{{end}}
+
+<main id="main" class="page">
+  {{if .Flash}}<div class="flash flash-{{.Flash.Kind}}" role="status">{{.Flash.Message}}</div>{{end}}
+  {{if .Error}}<div class="flash flash-error" role="alert">{{.Error}}</div>{{end}}
+  {{template "content" .}}
+</main>
+
+<footer class="footer">
+  <p>
+    Relata stores what you give it and proposes relationships between items.
+    Relationship strengths are <strong>heuristic scores</strong> computed from listed signals —
+    they are not calibrated probabilities, and an inferred relationship is a suggestion, not a fact.
+  </p>
+</footer>
+
+<script src="/static/vendor/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</body>
+</html>{{end}}

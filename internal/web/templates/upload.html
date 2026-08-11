@@ -1,0 +1,52 @@
+{{define "content"}}
+<h1>Upload a document</h1>
+<p class="muted">
+  Accepted: plain text, Markdown, JSON, PDF and Word (.docx).
+  Archives and executables are refused. Uploaded files are stored unchanged and are never executed.
+</p>
+
+<form method="post" action="/upload" class="stack" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+  <div class="field">
+    <label for="file">File</label>
+    <input id="file" name="file" type="file" required
+           accept=".txt,.md,.markdown,.json,.pdf,.docx,text/plain,text/markdown,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+           aria-describedby="file-hint">
+    <p id="file-hint" class="hint">Maximum {{.MaxUploadMB}} MB. The file type is verified from its contents, not its name.</p>
+  </div>
+
+  <div class="field">
+    <label for="title">Title</label>
+    <input id="title" name="title" type="text" maxlength="300">
+    <p class="hint">Optional. The filename is used if you leave this blank.</p>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="source_type">Source type</label>
+      <select id="source_type" name="source_type">
+        {{range sourceTypes}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="created_at">Date of the information</label>
+      <input id="created_at" name="created_at" type="date">
+    </div>
+  </div>
+
+  <div class="field field-check">
+    <input id="allow_duplicate" name="allow_duplicate" type="checkbox" value="true">
+    <label for="allow_duplicate">Store even if identical content already exists</label>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Upload and process</button>
+</form>
+
+{{if .Warning}}
+<div class="callout callout-warn">
+  <h2>Scanned documents</h2>
+  <p>Relata does not perform OCR in this version. A scanned PDF with no text layer is stored and preserved, but its contents cannot be searched. Relata will tell you when it detects this.</p>
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,8 @@
+{{define "content"}}
+<div class="error-page">
+  <h1>{{if .ErrorTitle}}{{.ErrorTitle}}{{else}}Something went wrong{{end}}</h1>
+  <p>{{if .ErrorMessage}}{{.ErrorMessage}}{{else}}The request could not be completed.{{end}}</p>
+  {{if .RequestID}}<p class="muted">Reference: <code>{{.RequestID}}</code></p>{{end}}
+  <p><a class="btn" href="/">Back to the dashboard</a></p>
+</div>
+{{end}}

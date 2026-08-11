@@ -1,0 +1,59 @@
+{{define "content"}}
+<h1>Neighbourhood of “{{truncate 80 .Item.Title}}”</h1>
+<p class="muted">
+  The items directly connected to this one. Column position shows direction, not importance.
+  Strength is a heuristic score, not a probability.
+</p>
+<p><a href="/items/{{.Item.ID}}">← Back to the item</a></p>
+
+<div class="neighbourhood">
+  <section class="neighbour-col" aria-labelledby="in-heading">
+    <h2 id="in-heading">Points at this item ({{len .Incoming}})</h2>
+    {{if .Incoming}}
+    <ul class="neighbour-list">
+      {{range .Incoming}}
+      <li>
+        <a href="/items/{{.OtherID}}">{{if .OtherTitle}}{{truncate 70 .OtherTitle}}{{else}}(item){{end}}</a>
+        <p class="neighbour-meta">
+          <span class="pill">{{relTypeLabel .Rel.Type}}</span>
+          <span>strength {{score2 .Rel.Score}} ({{strengthLabel .Rel.Score}})</span>
+          <span class="pill pill-prov-{{.Rel.Provenance}}">{{provenanceLabel .Rel.Provenance}}</span>
+        </p>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}<p class="muted">Nothing points at this item.</p>{{end}}
+  </section>
+
+  <section class="neighbour-col neighbour-centre" aria-labelledby="centre-heading">
+    <h2 id="centre-heading">This item</h2>
+    <div class="neighbour-focus">
+      <p class="item-title">{{.Item.Title}}</p>
+      <p class="item-meta">
+        <span class="pill pill-{{.Item.Status}}">{{statusLabel .Item.Status}}</span>
+        <span>{{.Item.SourceType}}</span>
+        <span>{{date .Item.CreatedAt}}</span>
+      </p>
+      <p class="excerpt">{{truncate 300 .Item.ExtractedText}}</p>
+    </div>
+  </section>
+
+  <section class="neighbour-col" aria-labelledby="out-heading">
+    <h2 id="out-heading">This item points at ({{len .Outgoing}})</h2>
+    {{if .Outgoing}}
+    <ul class="neighbour-list">
+      {{range .Outgoing}}
+      <li>
+        <a href="/items/{{.OtherID}}">{{if .OtherTitle}}{{truncate 70 .OtherTitle}}{{else}}(item){{end}}</a>
+        <p class="neighbour-meta">
+          <span class="pill">{{relTypeLabel .Rel.Type}}</span>
+          <span>strength {{score2 .Rel.Score}} ({{strengthLabel .Rel.Score}})</span>
+          <span class="pill pill-prov-{{.Rel.Provenance}}">{{provenanceLabel .Rel.Provenance}}</span>
+        </p>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}<p class="muted">This item points at nothing.</p>{{end}}
+  </section>
+</div>
+{{end}}

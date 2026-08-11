@@ -1,0 +1,53 @@
+{{define "content"}}
+<h1>Entities</h1>
+<p class="muted">
+  People, organisations, places, products, events, dates and concepts extracted from stored items.
+  Entities are matched only on an exact normalised name — similar names are never merged automatically.
+</p>
+
+<form class="filter-bar" method="get" action="/entities">
+  <div class="field">
+    <label for="q">Name contains</label>
+    <input id="q" name="q" type="search" value="{{.Filters.Query}}" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="type">Type</label>
+    <select id="type" name="type">
+      <option value="">Any</option>
+      {{range entityTypes}}<option value="{{.}}" {{if eq $.Filters.Type (printf "%s" .)}}selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </div>
+  <button type="submit" class="btn">Filter</button>
+  <a class="btn btn-quiet" href="/entities">Clear</a>
+</form>
+
+{{if .Entities}}
+<table class="table">
+  <caption class="visually-hidden">Extracted entities</caption>
+  <thead>
+    <tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Mentions</th>
+        <th scope="col">Items</th><th scope="col">Method</th><th scope="col">Evidence</th></tr>
+  </thead>
+  <tbody>
+    {{range .Entities}}
+    <tr>
+      <td><a href="/entities/{{.ID}}">{{.CanonicalName}}</a></td>
+      <td>{{.Type}}</td>
+      <td class="num">{{.Mentions}}</td>
+      <td class="num">{{len .ItemIDs}}</td>
+      <td>{{.Method}}</td>
+      <td class="num" title="How well attested this entity is. Not a probability.">{{score2 .EvidenceScore}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+
+<nav class="pagination" aria-label="Entity pages">
+  {{if .Pagination.PrevURL}}<a class="btn" href="{{.Pagination.PrevURL}}">Previous</a>{{end}}
+  <span class="muted">Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}}</span>
+  {{if .Pagination.NextURL}}<a class="btn" href="{{.Pagination.NextURL}}">Next</a>{{end}}
+</nav>
+{{else}}
+<div class="empty"><h2>No entities</h2><p>No entities match this filter.</p></div>
+{{end}}
+{{end}}

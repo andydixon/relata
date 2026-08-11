@@ -1,0 +1,104 @@
+{{define "content"}}
+<h1>Search</h1>
+
+<form class="search-form" method="get" action="/search" role="search">
+  <div class="field field-wide">
+    <label for="q">Search stored knowledge</label>
+    <input id="q" name="q" type="search" value="{{.Query.Text}}"
+           placeholder="e.g. What information relates to the revised delivery date?"
+           autocomplete="off" aria-describedby="q-hint">
+    <p id="q-hint" class="hint">
+      Natural language works. Relata combines keyword matching, meaning-based similarity,
+      entity matching and relationships between items.
+    </p>
+  </div>
+
+  <details class="filters" {{if .HasFilters}}open{{end}}>
+    <summary>Filters</summary>
+    <div class="filter-grid">
+      <div class="field">
+        <label for="created_from">Created from</label>
+        <input id="created_from" name="created_from" type="date" value="{{.Filters.CreatedFrom}}">
+      </div>
+      <div class="field">
+        <label for="created_to">Created to</label>
+        <input id="created_to" name="created_to" type="date" value="{{.Filters.CreatedTo}}">
+      </div>
+      <div class="field">
+        <label for="source_type">Source type</label>
+        <select id="source_type" name="source_type">
+          <option value="">Any</option>
+          {{range sourceTypes}}
+          <option value="{{.}}" {{if eq $.Filters.SourceType (printf "%s" .)}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="mime_type">File type</label>
+        <select id="mime_type" name="mime_type">
+          <option value="">Any</option>
+          <option value="text/plain" {{if eq .Filters.MIMEType "text/plain"}}selected{{end}}>Plain text</option>
+          <option value="text/markdown" {{if eq .Filters.MIMEType "text/markdown"}}selected{{end}}>Markdown</option>
+          <option value="application/json" {{if eq .Filters.MIMEType "application/json"}}selected{{end}}>JSON</option>
+          <option value="application/pdf" {{if eq .Filters.MIMEType "application/pdf"}}selected{{end}}>PDF</option>
+          <option value="application/vnd.openxmlformats-officedocument.wordprocessingml.document" {{if eq .Filters.MIMEType "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}}selected{{end}}>Word document</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="entity_id">Entity</label>
+        <select id="entity_id" name="entity_id">
+          <option value="">Any</option>
+          {{range .AllEntities}}
+          <option value="{{.ID}}" {{if eq $.Filters.EntityID .ID}}selected{{end}}>{{.CanonicalName}} ({{.Type}})</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="relationship_type">Relationship type</label>
+        <select id="relationship_type" name="relationship_type">
+          <option value="">Any</option>
+          {{range relTypes}}
+          <option value="{{.}}" {{if eq $.Filters.RelType (printf "%s" .)}}selected{{end}}>{{relTypeLabel .}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="min_relationship_strength">Minimum relationship strength</label>
+        <input id="min_relationship_strength" name="min_relationship_strength" type="number"
+               min="0" max="1" step="0.05" value="{{.Filters.MinStrength}}">
+        <p class="hint">A heuristic strength between 0 and 1, not a probability.</p>
+      </div>
+      <div class="field field-check">
+        <input id="confirmed_only" name="confirmed_only" type="checkbox" value="true"
+               {{if .Filters.ConfirmedOnly}}checked{{end}}>
+        <label for="confirmed_only">Only follow relationships a person has confirmed</label>
+      </div>
+    </div>
+  </details>
+
+  <div class="search-actions">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {{if .AnswerEnabled}}
+    <button type="submit" name="answer" value="true" class="btn">Answer from stored knowledge</button>
+    {{end}}
+    <a class="btn btn-quiet" href="/search">Clear</a>
+  </div>
+</form>
+
+{{if .Answer}}{{template "partial_answer.html" .}}{{end}}
+
+{{if .Searched}}
+  {{template "partial_search_results.html" .}}
+{{else}}
+  <div class="empty">
+    <h2>Try a question</h2>
+    <ul class="example-list">
+      <li><a href="/search?q=What+information+relates+to+the+revised+delivery+date%3F">What information relates to the revised delivery date?</a></li>
+      <li><a href="/search?q=Which+sources+disagree+about+the+project+cost%3F">Which sources disagree about the project cost?</a></li>
+      <li><a href="/search?q=Show+information+associated+with+Example+Ltd">Show information associated with Example Ltd</a></li>
+      <li><a href="/search?q=What+replaced+the+original+policy%3F">What replaced the original policy?</a></li>
+      <li><a href="/search?q=Find+items+similar+in+meaning+but+not+actually+about+the+same+event">Find items similar in meaning but not actually about the same event</a></li>
+    </ul>
+  </div>
+{{end}}
+{{end}}

@@ -1,0 +1,236 @@
+{{define "content"}}
+<article class="item-detail">
+  <header class="detail-head">
+    <h1>{{.Item.Title}}</h1>
+    <p class="item-meta">
+      <span class="pill pill-{{.Item.Status}}">{{statusLabel .Item.Status}}</span>
+      <span>{{.Item.SourceType}}</span>
+      <span>{{.Item.MIMEType}}</span>
+      <span>{{bytes .Item.SizeBytes}}</span>
+      <span>Created {{date .Item.CreatedAt}}</span>
+      <span>Ingested {{datetime .Item.IngestedAt}}</span>
+    </p>
+
+    <div class="detail-actions">
+      <a class="btn" href="/items/{{.Item.ID}}/neighbourhood">Neighbourhood</a>
+      <form method="post" action="/items/{{.Item.ID}}/reprocess" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn">Reprocess</button>
+      </form>
+      <form method="post" action="/items/{{.Item.ID}}/delete" class="inline-form"
+            data-confirm="Delete this item and its derived records? The original content will be removed.">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </header>
+
+  {{if .Item.Error}}
+  <p class="flash flash-error" role="alert">{{.Item.Error}}</p>
+  {{end}}
+
+  {{if .Item.Warnings}}
+  <section class="callout callout-warn" aria-labelledby="warn-heading">
+    <h2 id="warn-heading">Processing warnings</h2>
+    <ul>
+      {{range .Item.Warnings}}
+      <li><strong>{{.Message}}</strong>{{if .Detail}} <span class="muted">({{.Detail}})</span>{{end}}</li>
+      {{end}}
+    </ul>
+    <p class="muted">The original content is preserved unchanged and can be reprocessed.</p>
+  </section>
+  {{end}}
+
+  {{if .Item.DuplicateOf}}
+  <p class="flash flash-warn">
+    This item has identical content to
+    <a href="/items/{{.Item.DuplicateOf}}">another stored item</a>. It was kept deliberately.
+  </p>
+  {{end}}
+
+  <nav class="tabs" aria-label="Item sections">
+    <a href="#content">Content</a>
+    <a href="#metadata">Metadata</a>
+    <a href="#chunks">Sections ({{len .Chunks}})</a>
+    <a href="#entities">Entities ({{len .Entities}})</a>
+    <a href="#claims">Claims ({{len .Claims}})</a>
+    <a href="#relationships">Relationships ({{.RelationshipCount}})</a>
+    <a href="#history">Processing history</a>
+  </nav>
+
+  <section id="content" aria-labelledby="content-heading">
+    <h2 id="content-heading">Original content</h2>
+    {{if .Item.OriginalText}}
+      <pre class="content-block">{{.Item.OriginalText}}</pre>
+    {{else if .Item.OriginalFilename}}
+      <p>
+        Original file: <strong>{{.Item.OriginalFilename}}</strong> ({{bytes .Item.SizeBytes}}).
+        The uploaded file is stored unchanged and is never executed or rendered as markup.
+      </p>
+      <p><a class="btn" href="/items/{{.Item.ID}}/download">Download original</a></p>
+    {{else}}
+      <p class="muted">No original content is retained for this item.</p>
+    {{end}}
+
+    {{if .Item.ExtractedText}}
+    <h3>Extracted text</h3>
+    <p class="muted">
+      Produced by {{.Item.ParserVersion}}. This is what was chunked, embedded and searched.
+    </p>
+    <pre class="content-block">{{truncate 20000 .Item.ExtractedText}}</pre>
+    {{end}}
+  </section>
+
+  <section id="metadata" aria-labelledby="metadata-heading">
+    <h2 id="metadata-heading">Metadata</h2>
+    <dl class="meta-list">
+      <dt>Item ID</dt><dd><code>{{.Item.ID}}</code></dd>
+      <dt>Content hash</dt><dd><code>{{.Item.ContentHash}}</code></dd>
+      <dt>Parser</dt><dd>{{if .Item.ParserVersion}}{{.Item.ParserVersion}}{{else}}—{{end}}</dd>
+      <dt>Embedding model</dt><dd>{{if .Item.EmbeddingModel}}{{.Item.EmbeddingModel}}{{else}}—{{end}}</dd>
+      <dt>Analysis model</dt><dd>{{if .Item.AnalysisModel}}{{.Item.AnalysisModel}}{{else}}not used{{end}}</dd>
+      <dt>Scoring version</dt><dd>{{if .Item.ScoreVersion}}{{.Item.ScoreVersion}}{{else}}—{{end}}</dd>
+      {{range $k, $v := .Item.Metadata}}
+      <dt>{{$k}}</dt><dd>{{$v}}</dd>
+      {{end}}
+    </dl>
+  </section>
+
+  <section id="chunks" aria-labelledby="chunks-heading">
+    <h2 id="chunks-heading">Sections</h2>
+    {{if .Chunks}}
+    <ol class="chunk-list">
+      {{range .Chunks}}
+      <li class="chunk">
+        <p class="chunk-head">
+          Section {{add .Sequence 1}}
+          {{if .Page}}<span class="muted">page {{.Page}}</span>{{end}}
+          {{if .Section}}<span class="muted">{{.Section}}</span>{{end}}
+          <span class="muted">bytes {{.StartOffset}}–{{.EndOffset}}</span>
+          {{if .Embedded}}<span class="pill pill-ok">embedded</span>{{else}}<span class="pill">not embedded</span>{{end}}
+        </p>
+        <blockquote>{{truncate 800 .Text}}</blockquote>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}
+    <div class="empty"><p>This item has no sections. It may still be processing, or no text could be extracted.</p></div>
+    {{end}}
+  </section>
+
+  <section id="entities" aria-labelledby="entities-heading">
+    <h2 id="entities-heading">Entities</h2>
+    {{if .Entities}}
+    <ul class="entity-list">
+      {{range .Entities}}
+      <li>
+        <a href="/entities/{{.ID}}">{{.CanonicalName}}</a>
+        <span class="pill">{{.Type}}</span>
+        <span class="muted">{{.Mentions}} mention{{if ne .Mentions 1}}s{{end}}</span>
+        <span class="muted">{{.Method}}</span>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <div class="empty"><p>No entities were extracted from this item.</p></div>
+    {{end}}
+  </section>
+
+  <section id="claims" aria-labelledby="claims-heading">
+    <h2 id="claims-heading">Claims</h2>
+    <p class="muted">
+      A claim records that this source <em>says</em> something. It is not treated as fact.
+      Each one keeps the exact wording it came from.
+    </p>
+    {{if .Claims}}
+    <ul class="claim-list">
+      {{range .Claims}}
+      <li class="claim">
+        <p class="claim-statement">{{.Statement}}</p>
+        <blockquote class="claim-quote">{{.SourceRef.Quote}}</blockquote>
+        <p class="claim-meta muted">
+          <span>{{.Nature}}</span>
+          <span>{{.Method}}</span>
+          {{if .Attribution}}<span>attributed to {{.Attribution}}</span>{{end}}
+          {{if .Subject}}<span>subject: {{.Subject}}</span>{{end}}
+          <span>bytes {{.SourceRef.Start}}–{{.SourceRef.End}}</span>
+        </p>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <div class="empty"><p>No claims were extracted from this item.</p></div>
+    {{end}}
+  </section>
+
+  <section id="relationships" aria-labelledby="rel-heading">
+    <h2 id="rel-heading">Relationships</h2>
+    <p class="muted">
+      Relationship strength is a heuristic score built from the signals listed under each link.
+      It is not a calibrated probability.
+    </p>
+
+    <h3>Outgoing</h3>
+    {{if .Outgoing}}
+      {{range .Outgoing}}{{template "partial_relationship.html" (dict "R" . "CSRFToken" $.CSRFToken "Direction" "outgoing")}}{{end}}
+    {{else}}<p class="muted">None.</p>{{end}}
+
+    <h3>Incoming</h3>
+    {{if .Incoming}}
+      {{range .Incoming}}{{template "partial_relationship.html" (dict "R" . "CSRFToken" $.CSRFToken "Direction" "incoming")}}{{end}}
+    {{else}}<p class="muted">None.</p>{{end}}
+
+    <h3>Add a relationship</h3>
+    <form method="post" action="/relationships/create" class="inline-grid">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="source_id" value="{{.Item.ID}}">
+      <div class="field">
+        <label for="target_id">Related item</label>
+        <select id="target_id" name="target_id" required>
+          <option value="">Choose an item…</option>
+          {{range .OtherItems}}<option value="{{.ID}}">{{truncate 80 .Title}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="rel_type">Relationship</label>
+        <select id="rel_type" name="type" required>
+          {{range relTypes}}<option value="{{.}}">{{relTypeLabel .}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="rel_note">Note (optional)</label>
+        <input id="rel_note" name="note" type="text" maxlength="500">
+      </div>
+      <button type="submit" class="btn btn-primary">Add relationship</button>
+    </form>
+  </section>
+
+  <section id="history" aria-labelledby="history-heading">
+    <h2 id="history-heading">Processing history</h2>
+    {{if .Runs}}
+    <table class="table">
+      <caption class="visually-hidden">Processing runs for this item</caption>
+      <thead>
+        <tr><th scope="col">Started</th><th scope="col">Reason</th><th scope="col">Outcome</th>
+            <th scope="col">Parser</th><th scope="col">Embedding model</th><th scope="col">Scoring</th></tr>
+      </thead>
+      <tbody>
+        {{range .Runs}}
+        <tr>
+          <td>{{datetime .StartedAt}}</td>
+          <td>{{.Reason}}</td>
+          <td>{{.Outcome}}{{if .Error}} <span class="muted">{{truncate 120 .Error}}</span>{{end}}</td>
+          <td>{{.ParserVersion}}</td>
+          <td>{{.EmbeddingModel}}</td>
+          <td>{{.ScoreVersion}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <p class="muted">Previous runs are retained for audit; reprocessing never erases them.</p>
+    {{else}}
+    <p class="muted">No processing runs recorded.</p>
+    {{end}}
+  </section>
+</article>
+{{end}}

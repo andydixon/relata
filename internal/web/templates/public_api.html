@@ -1,0 +1,103 @@
+{{define "content"}}
+<h1>The Relata API</h1>
+<p class="lede">
+  Everything the interface does, <code>/api/v1</code> does too. Authenticate with a bearer
+  token you create for yourself.
+</p>
+
+<section class="panel">
+  <h2>Getting a token</h2>
+  <p>
+    Sign in, then go to <strong>Settings → API tokens</strong>. Choose a name, the scopes it
+    needs, and how long it should live.
+  </p>
+  <p class="callout">
+    The token is shown <strong>once</strong>. Relata stores only a SHA-256 hash of it, so a
+    database read — or a backup — yields nothing that can authenticate. If you lose it, revoke
+    it and make another.
+  </p>
+
+  <h3>Scopes</h3>
+  <table class="weights">
+    <thead><tr><th>Scope</th><th>Permits</th></tr></thead>
+    <tbody>
+      <tr><td><code>query</code></td><td>Search, generate answers, and read stored items, entities and relationships.</td></tr>
+      <tr><td><code>ingest</code></td><td>Create items, upload files, reprocess and delete.</td></tr>
+      <tr><td><code>review</code></td><td>Confirm, reject and retype relationships; confirm entity aliases.</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">
+    A token never carries more than the role of the person who created it. The check is the
+    intersection of the two, so demoting someone immediately narrows every token they hold
+    without any of those tokens being touched.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Using it</h2>
+  <pre><code>export RELATA_TOKEN='rlt_v1_...'
+
+# Search
+curl -s -H "Authorization: Bearer $RELATA_TOKEN" \
+  'https://relata.example/api/v1/search?q=delivery+schedule&limit=5'
+
+# Ingest a note
+curl -s -X POST -H "Authorization: Bearer $RELATA_TOKEN" \
+  -H 'Content-Type: application/json' \
+  https://relata.example/api/v1/items \
+  -d '{"title":"Meeting note","content":"The revised cost is 51,500.","source_type":"note"}'
+
+# Ask a question of what is stored
+curl -s -X POST -H "Authorization: Bearer $RELATA_TOKEN" \
+  -H 'Content-Type: application/json' \
+  https://relata.example/api/v1/search/answer \
+  -d '{"question":"What is the project cost?"}'</code></pre>
+
+  <p>
+    Bearer requests do not need a CSRF token: CSRF exists to stop a third-party page spending
+    <em>ambient</em> credentials, and an <code>Authorization</code> header is not ambient — a
+    browser never attaches one on its own.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>What a token cannot do</h2>
+  <ul class="wont">
+    <li><strong>Reach the web interface.</strong> Tokens authenticate <code>/api/v1</code> only.</li>
+    <li><strong>Manage tokens.</strong> Creating, listing and revoking tokens requires a
+      signed-in session, so a leaked token cannot mint its own replacements or extend its life.</li>
+    <li><strong>Outlive its expiry or revocation.</strong> Both are checked on every request
+      against the stored record. There is no cached grant to wait out.</li>
+    <li><strong>Exceed your role.</strong> Scopes narrow permission; they never widen it.</li>
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Errors</h2>
+  <p>Every error is a stable code with a safe message and a request ID:</p>
+  <pre><code>{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "This API token does not carry the scope this request needs.",
+    "detail": { "required_scope": "ingest" },
+    "request_id": "b3f1c0d2-…"
+  }
+}</code></pre>
+  <p class="muted">
+    Rate limiting is per token. A token making too many requests gets <code>429</code> with
+    <code>rate_limited</code>; the limit resets on a fixed window.
+  </p>
+</section>
+
+<section class="panel panel-quiet">
+  <h2>For operators</h2>
+  <p>
+    The redirect URI to register with your identity provider is:
+  </p>
+  <pre><code>{{.CallbackURL}}</code></pre>
+  <p class="muted">
+    The path is fixed at <code>/auth/oauth/callback</code>; only the host varies. The full
+    OpenAPI specification is in the repository at <code>docs/openapi.yaml</code>.
+  </p>
+</section>
+{{end}}

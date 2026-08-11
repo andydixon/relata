@@ -1,0 +1,115 @@
+# Relata — production stack for relata.dixon.cx
+#
+# Differences from the development compose file, and why:
+#
+#   - MongoDB and Qdrant publish NO ports. They are reachable only over the
+#     compose network, so nothing on the host or the LAN can talk to them.
+#     The development file publishes them for tooling; production has no reason
+#     to.
+#   - There is no Ollama container. The host already runs one on
+#     127.0.0.1:11434 with the models pulled, and a second copy would duplicate
+#     several gigabytes of weights for no benefit.
+#   - The application listens on loopback only. nginx is the only thing that
+#     reaches it, and TLS terminates there.
+#   - Secrets come from an env_file outside the repository. Nothing in this
+#     file is sensitive, so it is safe to commit.
+#
+# Managed by systemd: relata.service. See deploy/README.md.
+
+name: relata-prod
+
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The Qdrant image has no curl or wget; its own binary can answer.
+      test: ["CMD", "/qdrant/qdrant", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  app:
+    image: relata:${RELATA_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${RELATA_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    ports:
+      # Loopback only. nginx proxies to this; nothing else can reach it.
+      - "127.0.0.1:${RELATA_PUBLISH_PORT:-8477}:8080"
+    env_file:
+      # Secrets and site configuration. Outside the repository, mode 600.
+      - /etc/relata/relata.env
+    environment:
+      # Inside the container Relata must listen on all interfaces for the
+      # published port to reach it. The port itself is bound to 127.0.0.1
+      # above, so this does not expose anything.
+      RELATA_HTTP_ADDR: "0.0.0.0:8080"
+      RELATA_ALLOW_EXTERNAL_BIND: "true"
+      RELATA_MONGO_URI: "mongodb://mongodb:27017"
+      RELATA_QDRANT_URL: "http://qdrant:6333"
+      # The host's Ollama, reached through the gateway address below.
+      RELATA_OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      RELATA_UPLOAD_DIR: "/data/uploads"
+      RELATA_LOG_JSON: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - uploads:/data/uploads
+    # The image ships a read-only root filesystem; these are the only writable
+    # paths, and neither is executable.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/relata", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging: *logging
+
+volumes:
+  mongo_data:
+  mongo_config:
+  qdrant_data:
+  uploads:

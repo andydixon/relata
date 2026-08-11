@@ -1,0 +1,93 @@
+{{define "content"}}
+<h1>{{.Entity.CanonicalName}}</h1>
+<p class="item-meta">
+  <span class="pill">{{.Entity.Type}}</span>
+  <span>{{.Entity.Mentions}} mention{{if ne .Entity.Mentions 1}}s{{end}}</span>
+  <span>{{len .Entity.ItemIDs}} item{{if ne (len .Entity.ItemIDs) 1}}s{{end}}</span>
+  <span>extracted by {{.Entity.Method}}</span>
+  {{if .Entity.ModelVersion}}<span class="muted">{{.Entity.ModelVersion}}</span>{{end}}
+</p>
+
+<section aria-labelledby="items-heading">
+  <h2 id="items-heading">Items referring to this entity</h2>
+  {{if .Items}}
+  <ul class="item-list">
+    {{range .Items}}
+    <li class="item-row">
+      <a class="item-title" href="/items/{{.ID}}">{{.Title}}</a>
+      <p class="item-meta"><span>{{.SourceType}}</span><span>{{date .CreatedAt}}</span></p>
+    </li>
+    {{end}}
+  </ul>
+  <p><a href="/search?entity_id={{.Entity.ID}}">Search items associated with {{.Entity.CanonicalName}}</a></p>
+  {{else}}
+  <p class="muted">No items currently reference this entity.</p>
+  {{end}}
+</section>
+
+<section aria-labelledby="aliases-heading">
+  <h2 id="aliases-heading">Candidate aliases</h2>
+  <p class="muted">
+    Names that look similar to this one. Relata has <strong>not</strong> merged them:
+    similar names often belong to genuinely different things.
+  </p>
+  {{if .Aliases}}
+  <table class="table">
+    <caption class="visually-hidden">Candidate aliases</caption>
+    <thead><tr><th scope="col">Alias</th><th scope="col">Similarity</th><th scope="col">Status</th>
+               <th scope="col">Reason</th><th scope="col">Decision</th></tr></thead>
+    <tbody>
+      {{range .Aliases}}
+      <tr>
+        <td>{{.Alias}}</td>
+        <td class="num">{{score2 .Similarity}}</td>
+        <td><span class="pill pill-review-{{.Status}}">{{.Status}}</span></td>
+        <td class="muted">{{.Reason}}</td>
+        <td>
+          <div class="rel-actions">
+            <form method="post" action="/aliases/{{.ID}}/confirm" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-small btn-ok"
+                {{if eq .Status "confirmed"}}disabled{{end}}>Same thing</button>
+            </form>
+            <form method="post" action="/aliases/{{.ID}}/reject" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-small btn-danger"
+                {{if eq .Status "rejected"}}disabled{{end}}>Different</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="hint">
+    Confirming records that these names refer to the same thing. The two entities remain
+    <strong>separate records</strong>; the confirmation becomes evidence when relationships
+    are discovered, weighted below an exact name match.
+  </p>
+  {{else}}
+  <p class="muted">No alias candidates have been proposed.</p>
+  {{end}}
+</section>
+
+<section aria-labelledby="refs-heading">
+  <h2 id="refs-heading">Where it appears</h2>
+  {{if .Entity.SourceRefs}}
+  <ul class="claim-list">
+    {{range .Entity.SourceRefs}}
+    <li class="claim">
+      <blockquote class="claim-quote">{{.Quote}}</blockquote>
+      <p class="claim-meta muted">
+        <a href="/items/{{.ItemID}}">source item</a>
+        <span>bytes {{.Start}}–{{.End}}</span>
+        {{if .Page}}<span>page {{.Page}}</span>{{end}}
+      </p>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">No stored source references.</p>
+  {{end}}
+</section>
+{{end}}

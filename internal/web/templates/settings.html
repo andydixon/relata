@@ -1,0 +1,148 @@
+{{define "content"}}
+<h1>System settings</h1>
+<p class="muted">
+  Configuration is read from environment variables at startup. This page shows the values in
+  effect; secrets are never displayed. Change them in <code>.env</code> and restart Relata.
+</p>
+
+<section aria-labelledby="models-heading">
+  <h2 id="models-heading">Model status</h2>
+  <table class="table">
+    <caption class="visually-hidden">AI provider status</caption>
+    <thead><tr><th scope="col">Provider</th><th scope="col">Model</th><th scope="col">Endpoint</th><th scope="col">Status</th></tr></thead>
+    <tbody>
+      {{range .Providers}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>{{.Model}}</td>
+        <td><code>{{.Endpoint}}</code></td>
+        <td>
+          {{if .Available}}<span class="pill pill-ok">available</span>
+          {{else}}<span class="pill pill-warn">unavailable</span>{{end}}
+          {{if .Detail}}<br><span class="muted">{{.Detail}}</span>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted">
+    Relata works without a language model: ingestion, chunking, embedding, deterministic entity and
+    claim extraction, relationship scoring, keyword search and browsing all continue.
+    Only model-assisted extraction, relationship classification and generated answers require one.
+  </p>
+</section>
+
+<section aria-labelledby="versions-heading">
+  <h2 id="versions-heading">Versions in use</h2>
+  <dl class="meta-list">
+    <dt>Relata</dt><dd>{{.Version}}</dd>
+    <dt>Parser</dt><dd>{{.ParserVersion}}</dd>
+    <dt>Relationship scoring</dt><dd>{{.ScoreVersion}}</dd>
+    <dt>Search ranking</dt><dd>{{.RankVersion}}</dd>
+    <dt>Embedding dimensions</dt><dd>{{.EmbeddingDims}}</dd>
+  </dl>
+
+  {{if .ModelVersions}}
+  <h3>Models that produced stored data</h3>
+  <table class="table">
+    <caption class="visually-hidden">Model versions observed</caption>
+    <thead><tr><th scope="col">Kind</th><th scope="col">Name</th><th scope="col">Dimensions</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead>
+    <tbody>
+      {{range .ModelVersions}}
+      <tr>
+        <td>{{.Kind}}</td><td>{{.Name}}</td>
+        <td class="num">{{if .Dimensions}}{{.Dimensions}}{{else}}—{{end}}</td>
+        <td>{{date .FirstSeenAt}}</td><td>{{date .LastSeenAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted">
+    If the configured embedding model differs from the one that produced stored vectors,
+    re-embed the workspace so that similarity comparisons remain meaningful.
+  </p>
+  {{end}}
+</section>
+
+<section aria-labelledby="limits-heading">
+  <h2 id="limits-heading">Limits in effect</h2>
+  <dl class="meta-list">
+    <dt>Maximum upload size</dt><dd>{{.Limits.MaxUpload}}</dd>
+    <dt>Maximum extracted text</dt><dd>{{.Limits.MaxText}}</dd>
+    <dt>Maximum JSON nesting depth</dt><dd>{{.Limits.MaxJSONDepth}}</dd>
+    <dt>Maximum sections per item</dt><dd>{{.Limits.MaxChunks}}</dd>
+    <dt>Section size ceiling</dt><dd>{{.Limits.ChunkMax}} characters</dd>
+    <dt>Background workers</dt><dd>{{.Limits.Workers}}</dd>
+    <dt>Concurrent AI calls</dt><dd>{{.Limits.AIConcurrency}}</dd>
+    <dt>Concurrent ingestion</dt><dd>{{.Limits.ConcurrentIngest}}</dd>
+    <dt>Relationship candidates per item</dt><dd>{{.Limits.RelCandidates}}</dd>
+    <dt>Relationship storage threshold</dt><dd>{{.Limits.RelStoreScore}}</dd>
+    <dt>Near-duplicate similarity</dt><dd>{{.Limits.NearDuplicate}}</dd>
+    <dt>Session idle timeout</dt><dd>{{.Limits.SessionIdle}}</dd>
+  </dl>
+</section>
+
+<section aria-labelledby="storage-heading">
+  <h2 id="storage-heading">Storage</h2>
+  <dl class="meta-list">
+    <dt>MongoDB database</dt><dd><code>{{.Storage.MongoDatabase}}</code></dd>
+    <dt>Qdrant collection</dt><dd><code>{{.Storage.QdrantCollection}}</code></dd>
+    <dt>Vectors stored</dt><dd>{{.Storage.VectorCount}}</dd>
+    <dt>Chunks in MongoDB</dt><dd>{{.Storage.ChunkCount}}</dd>
+    <dt>Upload directory</dt><dd><code>{{.Storage.UploadDir}}</code></dd>
+  </dl>
+  {{if .Storage.Mismatch}}
+  <p class="flash flash-warn">
+    The number of stored vectors does not match the number of chunks. Re-embedding the
+    workspace will reconcile them.
+  </p>
+  {{end}}
+
+  {{if .IsAdmin}}
+  <form method="post" action="/settings/reembed" class="inline-form"
+        data-confirm="Re-embed every chunk in this workspace? This will queue background work.">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button type="submit" class="btn">Re-embed workspace</button>
+  </form>
+  <p class="hint">Use this after changing the embedding model.</p>
+  {{end}}
+</section>
+
+<section aria-labelledby="tokens-heading">
+  <h2 id="tokens-heading">API access</h2>
+  <p>
+    Programs authenticate to <code>/api/v1</code> with bearer tokens you create for yourself.
+    Each token carries explicit scopes and never more authority than your role.
+  </p>
+  <p>
+    <a class="btn" href="/settings/tokens">Manage API tokens</a>
+    <a class="btn btn-quiet" href="/api">How the API works</a>
+  </p>
+  {{if .OAuthEnabled}}
+  <p class="hint">
+    You signed in through {{.ProviderName}}. Your workspace is private to you: no item, entity
+    or relationship is shared with anyone else, which also means discovery never spans users.
+  </p>
+  {{end}}
+</section>
+
+<section aria-labelledby="scoring-heading">
+  <h2 id="scoring-heading">How relationship strength is calculated</h2>
+  <p>
+    Relata does not ask a language model for a percentage. Each relationship's strength is the sum
+    of weighted contributions from explicit signals, capped at 1.00. A model's opinion is
+    <strong>one signal</strong> and cannot on its own push a relationship past the storage threshold.
+  </p>
+  <table class="table">
+    <caption class="visually-hidden">Signal weights under {{.ScoreVersion}}</caption>
+    <thead><tr><th scope="col">Signal</th><th scope="col">Weight</th></tr></thead>
+    <tbody>
+      {{range .Weights}}<tr><td>{{.Name}}</td><td class="num">{{score2 .Weight}}</td></tr>{{end}}
+    </tbody>
+  </table>
+  <p class="muted">
+    The resulting number is a <strong>heuristic relationship strength</strong> under
+    <code>{{.ScoreVersion}}</code>. It is not a calibrated probability and should not be read as one.
+  </p>
+</section>
+{{end}}

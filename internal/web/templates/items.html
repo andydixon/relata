@@ -1,0 +1,67 @@
+{{define "content"}}
+<h1>Items</h1>
+
+<form class="filter-bar" method="get" action="/items">
+  <div class="field">
+    <label for="title">Title contains</label>
+    <input id="title" name="title" type="search" value="{{.Filters.Title}}" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="source_type">Source type</label>
+    <select id="source_type" name="source_type">
+      <option value="">Any</option>
+      {{range sourceTypes}}<option value="{{.}}" {{if eq $.Filters.SourceType (printf "%s" .)}}selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">Any</option>
+      <option value="ready" {{if eq .Filters.Status "ready"}}selected{{end}}>Ready</option>
+      <option value="partial" {{if eq .Filters.Status "partial"}}selected{{end}}>Ready with warnings</option>
+      <option value="failed" {{if eq .Filters.Status "failed"}}selected{{end}}>Failed</option>
+      <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Waiting</option>
+    </select>
+  </div>
+  <button type="submit" class="btn">Filter</button>
+  <a class="btn btn-quiet" href="/items">Clear</a>
+</form>
+
+{{if .Items}}
+<table class="table">
+  <caption class="visually-hidden">Stored items</caption>
+  <thead>
+    <tr>
+      <th scope="col">Title</th><th scope="col">Type</th><th scope="col">Status</th>
+      <th scope="col">Sections</th><th scope="col">Entities</th>
+      <th scope="col">Created</th><th scope="col">Ingested</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Items}}
+    <tr>
+      <td><a href="/items/{{.ID}}">{{truncate 90 .Title}}</a></td>
+      <td>{{.SourceType}}</td>
+      <td><span class="pill pill-{{.Status}}">{{statusLabel .Status}}</span></td>
+      <td class="num">{{.ChunkCount}}</td>
+      <td class="num">{{.EntityCount}}</td>
+      <td>{{date .CreatedAt}}</td>
+      <td>{{ago .IngestedAt}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+
+<nav class="pagination" aria-label="Item pages">
+  {{if .Pagination.PrevURL}}<a class="btn" href="{{.Pagination.PrevURL}}">Previous</a>{{end}}
+  <span class="muted">Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}}</span>
+  {{if .Pagination.NextURL}}<a class="btn" href="{{.Pagination.NextURL}}">Next</a>{{end}}
+</nav>
+{{else}}
+<div class="empty">
+  <h2>No items match</h2>
+  <p>Nothing here yet, or the filters exclude everything.</p>
+  <p><a class="btn btn-primary" href="/add">Add a note</a> <a class="btn" href="/upload">Upload a document</a></p>
+</div>
+{{end}}
+{{end}}

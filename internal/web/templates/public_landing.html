@@ -1,0 +1,133 @@
+{{define "content"}}
+<section class="hero">
+  <h1>Store what you know. Find out how it connects.</h1>
+  <p class="lede">
+    Relata stores arbitrary information, discovers <strong>evidence-backed</strong> relationships
+    between items, and retrieves related knowledge with an explanation of <em>why</em> each
+    result was returned.
+  </p>
+  <p class="hero-actions">
+    {{if .SignedIn}}
+      <a class="btn btn-primary btn-large" href="/">Open your workspace</a>
+    {{else if .OAuthEnabled}}
+      <a class="btn btn-primary btn-large" href="/auth/oauth/start">Sign in with {{.ProviderName}}</a>
+    {{else}}
+      <a class="btn btn-primary btn-large" href="/login">Sign in</a>
+    {{end}}
+    <a class="btn btn-large" href="/how-it-works">How it works</a>
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Three numbers, never mixed up</h2>
+  <p>
+    Most systems collapse "these documents read alike", "these documents are connected" and
+    "this document answers your question" into a single relevance figure. They are three
+    different claims with three different meanings, and Relata keeps them apart in storage, in
+    the API and on screen.
+  </p>
+  <div class="cards">
+    <div class="card">
+      <h3>Semantic similarity</h3>
+      <p class="card-q">How alike are these two pieces of text?</p>
+      <p>Cosine distance between embeddings. Nothing more. Two incident reports written by the
+        same team in the same house style will score highly and describe entirely different
+        events.</p>
+    </div>
+    <div class="card">
+      <h3>Relationship strength</h3>
+      <p class="card-q">How well evidenced is a link between two items?</p>
+      <p>A weighted sum of named signals, each stored with its own value and weight, so the
+        arithmetic is always inspectable. Not a probability.</p>
+    </div>
+    <div class="card">
+      <h3>Query relevance</h3>
+      <p class="card-q">How well does this item answer <em>this</em> question?</p>
+      <p>Several retrieval paths fused by rank. Comparable within one result set, not across
+        queries — and it says so.</p>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Similarity is not a relationship</h2>
+  <p>
+    This is the distinction the whole design exists to preserve. Two documents that share
+    wording are not thereby connected; two documents that mention the same company are not
+    thereby about the same thing. Relata records what it actually found:
+  </p>
+  <div class="evidence-example">
+    <div class="evidence-head">
+      <span class="rel-type">contradicts</span>
+      <span class="rel-score">strength 0.72</span>
+      <span class="rel-status">suggested by analysis — not yet reviewed</span>
+    </div>
+    <table class="signals">
+      <thead><tr><th>Signal</th><th>Value</th><th>Strength</th><th>Weight</th></tr></thead>
+      <tbody>
+        <tr><td>claim_contradiction</td><td>cost: 42,000 and 51,500</td><td>1.00</td><td>0.22</td></tr>
+        <tr><td>shared_entity</td><td>Example Ltd</td><td>1.00</td><td>0.25</td></tr>
+        <tr><td>semantic_similarity</td><td>0.89 cosine</td><td>0.76</td><td>0.30</td></tr>
+      </tbody>
+    </table>
+    <p class="evidence-note">
+      Both figures are named. Relata does not decide which is correct.
+    </p>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>What a language model is allowed to do</h2>
+  <p>
+    A model may classify a relationship's type or describe a connection. Its opinion is
+    <strong>one signal, weighted 0.15</strong> — below the threshold at which a relationship is
+    stored at all. A model cannot create a connection on its own, however confident it is. That
+    is a property of the arithmetic, not a promise, and there is a test asserting it.
+  </p>
+  <table class="weights">
+    <caption>Signal weights in <code>relationship-score-v1</code></caption>
+    <thead><tr><th>Signal</th><th>Weight</th><th>What it means</th></tr></thead>
+    <tbody>
+      {{range .Weights}}
+      <tr>
+        <td><code>{{.Signal}}</code></td>
+        <td class="num">{{printf "%.2f" .Weight}}</td>
+        <td>{{.Means}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>What it will not do</h2>
+  <ul class="wont">
+    <li><strong>It will not merge two entities because their names look alike.</strong>
+      "Example Ltd" and "Example Holdings Ltd" are different companies far more often than they
+      are typos of each other. Similar names become a candidate alias awaiting a person's
+      confirmation, and a confirmed alias still does not merge the records.</li>
+    <li><strong>It will not infer causation from sequence.</strong> Two things happening in
+      order yields a chronological statement and nothing more.</li>
+    <li><strong>It will not hide conflicting evidence.</strong> Contradictions between retrieved
+      documents are surfaced independently of what any model said about them.</li>
+    <li><strong>It will not present an inference as a fact.</strong> Every discovered
+      relationship arrives as a proposal, labelled as one, and nothing is auto-confirmed.</li>
+    <li><strong>It will not rewrite your originals.</strong> The bytes you supplied are stored
+      verbatim; everything else is derived and reproducible.</li>
+  </ul>
+</section>
+
+<section class="panel panel-quiet">
+  <h2>Honest about the limits</h2>
+  <p>
+    Relationship scores are heuristic strengths, not calibrated probabilities — the weights were
+    chosen by judgement, not fitted to labelled data. A 0.7 does not mean "70% likely to be
+    real". Deterministic extraction is deliberately narrow. There is no OCR. Prompt-injection
+    defences make injection much harder and bound its effect; they are not a proof.
+  </p>
+  <p>
+    <a href="/how-it-works">The full account is on the how-it-works page</a>, including what is
+    verified and what is merely intended.
+  </p>
+</section>
+{{end}}

@@ -1,0 +1,137 @@
+# Relata local development environment.
+#
+# Everything binds to 127.0.0.1 by design: Relata is a private knowledge store,
+# and none of these services should be reachable from the network by default.
+#
+#   make compose-up     start MongoDB, Qdrant and Ollama
+#   make dev            run Relata against them from source
+#
+# To run Relata itself in a container as well, add the `app` profile:
+#   docker compose --profile app up -d
+
+name: relata
+
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--bind_ip_all", "--wiredTigerCacheSizeGB", "1"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"   # REST
+      - "127.0.0.1:6334:6334"   # gRPC, unused by Relata but exposed for tooling
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__ENABLE_TLS: "false"
+      QDRANT__LOG_LEVEL: "INFO"
+    healthcheck:
+      # Qdrant's image is distroless, so the readiness probe uses its own binary.
+      test: ["CMD", "/qdrant/qdrant", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "10m"
+      # Bound so a large model cannot exhaust the host's memory.
+      OLLAMA_MAX_LOADED_MODELS: "2"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  # Pulls the models Relata needs, then exits. Run with:
+  #   docker compose --profile setup up ollama-pull
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: ["setup"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Pulling embedding model: ${RELATA_EMBEDDING_MODEL:-nomic-embed-text}"
+        ollama pull "${RELATA_EMBEDDING_MODEL:-nomic-embed-text}"
+        echo "Pulling analysis model: ${RELATA_ANALYSIS_MODEL:-llama3.1:8b}"
+        ollama pull "${RELATA_ANALYSIS_MODEL:-llama3.1:8b}"
+        echo "Models ready."
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["app"]
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    ports:
+      # The published port is configurable so a busy 8080 does not block
+      # startup: RELATA_PUBLISH_PORT=8090 docker compose --profile app up -d
+      - "127.0.0.1:${RELATA_PUBLISH_PORT:-8080}:8080"
+    environment:
+      # Inside the container Relata must listen on all interfaces for the
+      # published port to reach it; the port itself is bound to loopback above.
+      RELATA_HTTP_ADDR: "0.0.0.0:8080"
+      RELATA_ALLOW_EXTERNAL_BIND: "true"
+      RELATA_BASE_URL: "http://127.0.0.1:${RELATA_PUBLISH_PORT:-8080}"
+      RELATA_MONGO_URI: "mongodb://mongodb:27017"
+      RELATA_QDRANT_URL: "http://qdrant:6333"
+      RELATA_OLLAMA_BASE_URL: "http://ollama:11434"
+      RELATA_UPLOAD_DIR: "/data/uploads"
+      RELATA_LOG_JSON: "true"
+    volumes:
+      - uploads:/data/uploads
+    # The image ships a read-only root filesystem; these are the only writable
+    # paths, and neither is executable.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/relata", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mongo_data:
+  mongo_config:
+  qdrant_data:
+  ollama_data:
+  uploads:

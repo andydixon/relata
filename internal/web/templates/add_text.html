@@ -1,0 +1,55 @@
+{{define "content"}}
+<h1>Add text</h1>
+<p class="muted">Paste a note, an email, a transcript, Markdown or a JSON document. The original is stored unchanged.</p>
+
+<form method="post" action="/add" class="stack" enctype="application/x-www-form-urlencoded">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+  <div class="field">
+    <label for="title">Title</label>
+    <input id="title" name="title" type="text" maxlength="300" value="{{.Form.Title}}"
+           aria-describedby="title-hint">
+    <p id="title-hint" class="hint">Optional. A title is generated if you leave this blank.</p>
+  </div>
+
+  <div class="field">
+    <label for="content">Content</label>
+    <textarea id="content" name="content" rows="18" required aria-describedby="content-hint">{{.Form.Content}}</textarea>
+    <p id="content-hint" class="hint">Relata detects the format from the content itself.</p>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="source_type">Source type</label>
+      <select id="source_type" name="source_type">
+        {{range sourceTypes}}<option value="{{.}}" {{if eq $.Form.SourceType (printf "%s" .)}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="created_at">Date of the information</label>
+      <input id="created_at" name="created_at" type="date" value="{{.Form.CreatedAt}}"
+             aria-describedby="created-hint">
+      <p id="created-hint" class="hint">When the information itself dates from, if not today.</p>
+    </div>
+  </div>
+
+  <fieldset class="field">
+    <legend>Metadata (optional)</legend>
+    <div class="row">
+      <div class="field"><label for="mk1">Key</label><input id="mk1" name="metadata_key" type="text" maxlength="64"></div>
+      <div class="field"><label for="mv1">Value</label><input id="mv1" name="metadata_value" type="text" maxlength="2000"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="mk2">Key</label><input id="mk2" name="metadata_key" type="text" maxlength="64"></div>
+      <div class="field"><label for="mv2">Value</label><input id="mv2" name="metadata_value" type="text" maxlength="2000"></div>
+    </div>
+  </fieldset>
+
+  <div class="field field-check">
+    <input id="allow_duplicate" name="allow_duplicate" type="checkbox" value="true">
+    <label for="allow_duplicate">Store even if identical content already exists</label>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Store and process</button>
+</form>
+{{end}}
